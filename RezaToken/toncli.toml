@@ -1,0 +1,20 @@
+[project]
+name = "RezaToken"
+version = "0.1.0"
+authors = ["Your Name <your.email@example.com>"]
+
+[network]
+version = -1
+blockchain = "ton"
+network = "testnet"
+
+[contracts.RezaToken]
+data = ["contracts/RezaToken.tact"]
+output = "build/"
+
+[build]
+compiler = "tact"
+
+[deploy]
+network = "testnet"
+update_code = true
