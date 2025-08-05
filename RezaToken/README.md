@@ -1,33 +1,51 @@
 # RezaToken 🚀
 
-A modern Jetton (TON token) implementation built with Tact programming language for the TON blockchain.
+A modern Jetton (TON token) implementation with advanced sale approval mechanism, built with Tact programming language for the TON blockchain.
 
 ## 📋 Overview
 
-RezaToken is a fully-featured Jetton (fungible token) smart contract that follows the TEP-74 standard. It includes:
+RezaToken is a sophisticated Jetton (fungible token) smart contract system that follows the TEP-74 standard with additional features:
 
 - ✅ **Mintable tokens** with owner control
+- ✅ **Sale approval mechanism** with USD-based limits
+- ✅ **Price feed integration** for TON/USD rates
+- ✅ **Custom wallet implementation** with transfer restrictions
 - ✅ **Transfer functionality** between wallets
 - ✅ **Burn mechanism** for token destruction
 - ✅ **Owner-only minting** with ability to close minting
 - ✅ **Standard Jetton interface** compatibility
-- ✅ **Comprehensive test suite**
+- ✅ **Comprehensive test suite** and deployment scripts
 
 ## 🏗️ Project Structure
 
 ```tree
-rezatoken/
-├── toncli.toml                     # TON project configuration
+RezaToken/
+├── contracts/                     # Tact smart contracts
+│   ├── RezaTokenMinter.tact       # Main Jetton minter contract
+│   ├── CustomJettonWallet.tact    # Custom wallet with sale approval
+│   └── PriceFeed.tact             # TON/USD price oracle
+├── scripts/                       # Deployment and management scripts
+│   ├── deploy.ts                  # Main deployment script
+│   ├── deploy-testnet.ts          # Testnet-specific deployment
+│   ├── mintTokens.ts              # Token minting script
+│   ├── updatePrice.ts             # Price feed update script
+│   ├── approveSale.ts             # Sale approval script
+│   └── checkBalance.ts            # Balance checking script
+├── wrappers/                      # TypeScript contract wrappers
+│   ├── RezaTokenMinter.ts         # Minter contract wrapper
+│   ├── CustomJettonWallet.ts      # Wallet contract wrapper
+│   └── PriceFeed.ts               # Price feed wrapper
+├── tests/                         # Test suite
+│   ├── RezaToken.test.ts          # Comprehensive contract tests
+│   └── setup.ts                   # Test configuration
 ├── build/                         # Compiled contracts (auto-generated)
-├── contracts/
-│   └── RezaToken.tact             # Main smart contract code
-├── func/                          # (Optional) Low-level TON logic
-├── tests/
-│   └── RezaToken.test.ts          # Unit tests
-├── wallet/
-│   └── wallet.testnet.txt         # Wallet configuration (testnet)
-├── .ton-global.config             # Global TON CLI config
-├── .gitignore                     # Git ignore rules
+├── toncli.toml                    # TON project configuration
+├── package.json                   # Node.js dependencies
+├── blueprint.config.ts            # Blueprint framework config
+├── tsconfig.json                  # TypeScript configuration
+├── jest.config.js                 # Test configuration
+├── DEPLOYMENT.md                  # Deployment guide
+├── .env.example                   # Environment variables template
 └── README.md                      # This file
 ```
 
@@ -44,48 +62,72 @@ Before you begin, ensure you have:
 ### 1. Install Dependencies
 
 ```bash
-# Install Tact compiler globally
-npm install -g @tact-lang/compiler
+# Clone the repository
+git clone <your-repo-url>
+cd RezaToken
 
-# If using Blueprint framework
+# Install dependencies
+npm install
+
+# Install Blueprint globally (if not already installed)
 npm install -g @ton/blueprint
 ```
 
-### 2. Compile the Contract
+### 2. Setup Environment
 
 ```bash
-# Compile using Tact
+# Copy environment template
+cp .env.example .env
+
+# Edit .env with your configuration
+# Add your mnemonic, API keys, etc.
+```
+
+### 3. Compile Contracts
+
+```bash
+# Compile all contracts
+npm run build
+
+# Or compile individually
 tact --config toncli.toml
-
-# Or if using Blueprint
-npx blueprint build
 ```
 
-### 3. Run Tests
+### 4. Run Tests
 
 ```bash
-# Install test dependencies
-npm install
-
-# Run tests
+# Run comprehensive test suite
 npm test
+
+# Run with verbose output
+VERBOSE_TESTS=true npm test
 ```
 
-### 4. Deploy to Testnet
+### 5. Deploy to Testnet
 
-1. **Setup your wallet:**
-   - Edit `wallet/wallet.testnet.txt` with your testnet wallet details
-   - Get testnet TON from [faucets](#-testnet-faucets)
+```bash
+# Deploy all contracts to testnet
+npm run deploy:testnet
 
-2. **Deploy the contract:**
+# Or use Blueprint directly
+npx blueprint run deploy-testnet
+```
 
-   ```bash
-   # Using TON CLI
-   toncli deploy --network testnet
+### 6. Manage Your Tokens
 
-   # Or using Blueprint
-   npx blueprint run
-   ```
+```bash
+# Mint tokens
+npm run mint
+
+# Check balances
+npm run balance
+
+# Update price feed
+npm run price
+
+# Approve sales
+npm run approve
+```
 
 ## 🔧 Contract Features
 

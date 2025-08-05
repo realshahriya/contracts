@@ -1,51 +1,63 @@
 import "@stdlib/deploy";
 
 message TokenTransfer {
-  query_id: int as uint64;
-  amount: int as coins;
-  sender: address;
-  response_destination: address?;
-  custom_payload: cell?;
-  forward_ton_amount: int as coins;
-  forward_payload: slice as remaining;
+  queryId: Int as uint64;
+  amount: Int as coins;
+  sender: Address;
+  responseDestination: Address?;
+  customPayload: Cell?;
+  forwardTonAmount: Int as coins;
+  forwardPayload: Slice as remaining;
 }
 
 message TokenTransferInternal {
-  query_id: int as uint64;
-  amount: int as coins;
-  from: address;
-  response_destination: address?;
-  forward_ton_amount: int as coins;
-  forward_payload: slice as remaining;
+  queryId: Int as uint64;
+  amount: Int as coins;
+  from: Address;
+  responseDestination: Address?;
+  forwardTonAmount: Int as coins;
+  forwardPayload: Slice as remaining;
 }
 
 message SaleApprovalResponse {
-  approved: bool;
-  query_id: int as uint64;
+  approved: Bool;
+  queryId: Int as uint64;
 }
 
 message TokenNotification {
-  query_id: int as uint64;
-  amount: int as coins;
-  from: address;
-  forward_payload: slice as remaining;
+  queryId: Int as uint64;
+  amount: Int as coins;
+  from: Address;
+  forwardPayload: Slice as remaining;
 }
 
 message TokenExcesses {
-  query_id: int as uint64;
+  queryId: Int as uint64;
+}
+
+message CheckSaleApproval {
+  user: Address;
+  amountRtz: Int as coins;
+  queryId: Int as uint64;
 }
 
 contract CustomJettonWallet {
-  balance: int as coins;
-  owner: address;
-  jetton: address;
-  pending_transfer: (int, address, int as uint64)?; // (amount, destination, query_id)
+  balance: Int as coins;
+  owner: Address;
+  jetton: Address;
+  pendingAmount: Int as coins;
+  pendingDestination: Address?;
+  pendingQueryId: Int as uint64;
+  hasPendingTransfer: Bool;
 
-  init(jetton: address, owner: address) {
+  init(jetton: Address, owner: Address) {
     self.balance = 0;
     self.owner = owner;
     self.jetton = jetton;
-    self.pending_transfer = null;
+    self.pendingAmount = 0;
+    self.pendingDestination = null;
+    self.pendingQueryId = 0;
+    self.hasPendingTransfer = false;
   }
 
   receive(msg: TokenTransfer) {
@@ -53,22 +65,17 @@ contract CustomJettonWallet {
     require(ctx.sender == self.owner, "Invalid sender");
     require(self.balance >= msg.amount, "Not enough tokens");
 
-    if (msg.sender != self.owner) {
-      // Prevent unauthorized call
-      throw("Unauthorized");
-    }
-
     // If sending to self or owner => unrestricted
-    if (msg.custom_payload == null && msg.response_destination == null) {
+    if (msg.customPayload == null && msg.responseDestination == null) {
       // Regular transfer
       self.transferTokens(msg);
       return;
     }
 
     // Check if selling (transfer to non-owner)
-    let is_sell = msg.custom_payload != null || msg.response_destination != null;
+    let isSell = msg.customPayload != null || msg.responseDestination != null;
 
-    if (is_sell) {
+    if (isSell) {
       // Request approval from minter
       send(SendParameters{
         to: self.jetton,
@@ -76,11 +83,18 @@ contract CustomJettonWallet {
         mode: SendPayGasSeparately,
         body: CheckSaleApproval{
           user: self.owner,
-          amount_rtz: msg.amount,
-          query_id: msg.query_id
+          amountRtz: msg.amount,
+          queryId: msg.queryId
         }.toCell()
       });
-      self.pending_transfer = (msg.amount, msg.response_destination ?: msg.sender, msg.query_id);
+      self.pendingAmount = msg.amount;
+      if (msg.responseDestination != null) {
+        self.pendingDestination = msg.responseDestination;
+      } else {
+        self.pendingDestination = msg.sender;
+      }
+      self.pendingQueryId = msg.queryId;
+      self.hasPendingTransfer = true;
       return;
     }
 
@@ -88,10 +102,9 @@ contract CustomJettonWallet {
   }
 
   receive(msg: SaleApprovalResponse) {
-    if (self.pending_transfer == null) {
+    if (!self.hasPendingTransfer) {
       return;
     }
-    let (amount, destination, query_id) = self.pending_transfer!!;
 
     if (!msg.approved) {
       // Notify sender of rejection if possible
@@ -101,41 +114,41 @@ contract CustomJettonWallet {
         mode: SendRemainingValue + SendIgnoreErrors,
         bounce: false,
         body: TokenNotification{
-          query_id: query_id,
+          queryId: self.pendingQueryId,
           amount: 0,
           from: myAddress(),
-          forward_payload: emptySlice()
+          forwardPayload: emptySlice()
         }.toCell()
       });
-      self.pending_transfer = null;
+      self.hasPendingTransfer = false;
       return;
     }
 
     // Approved: transfer tokens
-    require(self.balance >= amount, "Insufficient balance");
-    self.balance -= amount;
+    require(self.balance >= self.pendingAmount, "Insufficient balance");
+    self.balance -= self.pendingAmount;
 
-    let init = initOf CustomJettonWallet(self.jetton, destination);
-    let wallet_address = contractAddress(init);
+    let init = initOf CustomJettonWallet(self.jetton, self.pendingDestination!!);
+    let walletAddress = contractAddress(init);
 
     send(SendParameters{
-      to: wallet_address,
+      to: walletAddress,
       value: 0,
       mode: SendRemainingValue,
       bounce: true,
       body: TokenTransferInternal{
-        query_id: query_id,
-        amount: amount,
+        queryId: self.pendingQueryId,
+        amount: self.pendingAmount,
         from: self.owner,
-        response_destination: null,
-        forward_ton_amount: 0,
-        forward_payload: emptySlice()
+        responseDestination: null,
+        forwardTonAmount: 0,
+        forwardPayload: emptySlice()
       }.toCell(),
       code: init.code,
       data: init.data
     });
 
-    self.pending_transfer = null;
+    self.hasPendingTransfer = false;
   }
 
   receive(msg: TokenTransferInternal) {
@@ -149,28 +162,28 @@ contract CustomJettonWallet {
     self.balance += msg.amount;
     require(self.balance >= 0, "Invalid balance");
 
-    if (msg.forward_ton_amount > 0) {
+    if (msg.forwardTonAmount > 0) {
       send(SendParameters{
         to: self.owner,
-        value: msg.forward_ton_amount,
+        value: msg.forwardTonAmount,
         mode: SendPayGasSeparately,
         bounce: false,
         body: TokenNotification{
-          query_id: msg.query_id,
+          queryId: msg.queryId,
           amount: msg.amount,
           from: msg.from,
-          forward_payload: msg.forward_payload
+          forwardPayload: msg.forwardPayload
         }.toCell()
       });
     }
 
-    if (msg.response_destination != null) {
+    if (msg.responseDestination != null) {
       send(SendParameters{
-        to: msg.response_destination!!,
+        to: msg.responseDestination!!,
         value: 0,
         mode: SendRemainingValue + SendIgnoreErrors,
         bounce: false,
-        body: TokenExcesses{ query_id: msg.query_id }.toCell()
+        body: TokenExcesses{ queryId: msg.queryId }.toCell()
       });
     }
   }
@@ -180,39 +193,39 @@ contract CustomJettonWallet {
     require(self.balance >= 0, "Negative balance");
 
     let init = initOf CustomJettonWallet(self.jetton, msg.sender);
-    let wallet_address = contractAddress(init);
+    let walletAddress = contractAddress(init);
 
     send(SendParameters{
-      to: wallet_address,
+      to: walletAddress,
       value: 0,
       mode: SendRemainingValue,
       bounce: true,
       body: TokenTransferInternal{
-        query_id: msg.query_id,
+        queryId: msg.queryId,
         amount: msg.amount,
         from: self.owner,
-        response_destination: msg.response_destination,
-        forward_ton_amount: msg.forward_ton_amount,
-        forward_payload: msg.forward_payload
+        responseDestination: msg.responseDestination,
+        forwardTonAmount: msg.forwardTonAmount,
+        forwardPayload: msg.forwardPayload
       }.toCell(),
       code: init.code,
       data: init.data
     });
   }
 
-  get fun get_wallet_data(): JettonWalletData {
+  get fun getWalletData(): JettonWalletData {
     return JettonWalletData{
       balance: self.balance,
       owner: self.owner,
       jetton: self.jetton,
-      jetton_wallet_code: myCode()
+      jettonWalletCode: myCode()
     };
   }
 }
 
 struct JettonWalletData {
-  balance: int;
-  owner: address;
-  jetton: address;
-  jetton_wallet_code: cell;
+  balance: Int;
+  owner: Address;
+  jetton: Address;
+  jettonWalletCode: Cell;
 }

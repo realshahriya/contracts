@@ -1,0 +1,19 @@
+{
+  "projects": [
+    {
+      "name": "RezaTokenMinter",
+      "path": "./RezaTokenMinter.tact",
+      "output": "./build/"
+    },
+    {
+      "name": "CustomJettonWallet", 
+      "path": "./CustomJettonWallet.tact",
+      "output": "./build/"
+    },
+    {
+      "name": "PriceFeed",
+      "path": "./PriceFeed.tact", 
+      "output": "./build/"
+    }
+  ]
+}

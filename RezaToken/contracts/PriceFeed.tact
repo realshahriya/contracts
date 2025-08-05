@@ -2,29 +2,29 @@ import "@stdlib/deploy";
 import "@stdlib/ownable";
 
 message UpdatePrice {
-  ton_usd_rate: int; // TON price in USD * 1e6 (e.g. 2.5 USD = 2500000)
+  tonUsdRate: Int; // TON price in USD * 1e6 (e.g. 2.5 USD = 2500000)
 }
 
 contract PriceFeed with Deployable, Ownable {
-  owner: address;
-  ton_usd_rate: int;
+  owner: Address;
+  tonUsdRate: Int;
 
-  init(owner: address) {
+  init(owner: Address) {
     self.owner = owner;
-    self.ton_usd_rate = 2500000; // default $2.5 per TON
+    self.tonUsdRate = 2500000; // default $2.5 per TON
   }
 
   receive(msg: UpdatePrice) {
     self.requireOwner();
-    self.ton_usd_rate = msg.ton_usd_rate;
+    self.tonUsdRate = msg.tonUsdRate;
   }
 
   // Getter for TON/USD price
-  get fun get_ton_usd_rate(): int {
-    return self.ton_usd_rate;
+  get fun getTonUsdRate(): Int {
+    return self.tonUsdRate;
   }
 
-  get fun get_owner(): address {
+  get fun getOwner(): Address {
     return self.owner;
   }
 }
