@@ -238,16 +238,14 @@ contract HYPEYToken is ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable, Ac
     function builder() external pure returns (string memory) {
         return "TOPAY DEV TEAM";
     }
-    
     // --- UUPS Upgrade Authorization ---
     // VSC1: Upgradeable Contract Backdoor - Require timelock AND multisig
     function _authorizeUpgrade(address newImplementation) internal override {
         require(msg.sender == address(timelock), "Upgrade only via timelock");
         require(hasRole(MULTISIG_ADMIN_ROLE, tx.origin), "Upgrade requires multisig admin");
     }
-}
-
     /// @notice Returns the buy tax rate (always 0)
     function getBuyTaxBps() external pure returns (uint256) {
         return 0;
     }
+}

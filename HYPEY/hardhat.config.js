@@ -25,33 +25,17 @@ module.exports = {
       url: "http://127.0.0.1:8545",
       chainId: 31337,
     },
-    sepolia: {
-      url: process.env.SEPOLIA_URL || "",
-      accounts: process.env.PRIVATE_KEY && process.env.PRIVATE_KEY !== "your_private_key_here" 
-        ? [process.env.PRIVATE_KEY.startsWith('0x') ? process.env.PRIVATE_KEY : '0x' + process.env.PRIVATE_KEY] 
-        : [DEFAULT_PRIVATE_KEY],
-      chainId: 11155111,
-    },
     baseSepolia: {
-      url: process.env.SEPOLIA_URL || "",
+      url: process.env.BASE_SEPOLIA_URL || "",
       accounts: process.env.PRIVATE_KEY && process.env.PRIVATE_KEY !== "your_private_key_here" 
         ? [process.env.PRIVATE_KEY.startsWith('0x') ? process.env.PRIVATE_KEY : '0x' + process.env.PRIVATE_KEY] 
         : [DEFAULT_PRIVATE_KEY],
       chainId: 84532,
     },
-    mainnet: {
-      url: process.env.MAINNET_URL || "",
-      accounts: process.env.PRIVATE_KEY && process.env.PRIVATE_KEY !== "your_private_key_here" 
-        ? [process.env.PRIVATE_KEY.startsWith('0x') ? process.env.PRIVATE_KEY : '0x' + process.env.PRIVATE_KEY] 
-        : [DEFAULT_PRIVATE_KEY],
-      chainId: 1,
-    },
   },
   etherscan: {
     apiKey: {
-      mainnet: process.env.ETHERSCAN_API_KEY,
-      sepolia: process.env.ETHERSCAN_API_KEY,
-      baseSepolia: process.env.BASESCAN_API_KEY || process.env.ETHERSCAN_API_KEY,
+      baseSepolia: process.env.BASESCAN_API_KEY,
     },
     customChains: [
       {

@@ -47,6 +47,8 @@ wallet/testnet.txt
 ehthumbs.db
 Thumbs.db
 
+# Artifacts
+
 # Logs
 logs/
 *.log
