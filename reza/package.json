@@ -1,14 +1,12 @@
 {
-    "name": "rezatoken",
+    "name": "reza",
     "version": "0.0.1",
     "scripts": {
         "bp": "blueprint",
         "start": "blueprint run",
         "build": "blueprint build",
         "test": "jest --verbose",
-        "release": "blueprint pack && npm publish --access public",
-        "generate-wallet": "ts-node scripts/generateWallet.ts",
-        "check-balance": "blueprint run checkBalance"
+        "release": "blueprint pack && npm publish --access public"
     },
     "dependencies": {
         "@ton/core": "~0"
