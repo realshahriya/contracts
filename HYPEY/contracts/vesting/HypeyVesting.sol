@@ -77,6 +77,9 @@ contract HypeyVesting is Initializable, OwnableUpgradeable, PausableUpgradeable,
         emit MerkleRootUpdated(newRoot);
     }
 
+    // Add event for vesting modification
+    event VestingModified(address indexed beneficiary, uint256 index);
+    event EmergencyAction(string action, address executor);
     function addVestingSchedule(
         address beneficiary,
         uint256 totalAmount,
@@ -86,16 +89,12 @@ contract HypeyVesting is Initializable, OwnableUpgradeable, PausableUpgradeable,
         uint256 slicePeriodSeconds,
         uint256 cliffUnlockPercent
     ) external onlyRole(MULTISIG_ADMIN_ROLE) {
-        require(beneficiary != address(0), "Invalid beneficiary address"); // XSC3: Input validation
-        require(totalAmount > 0, "Total amount must be greater than zero");
-        require(start >= block.timestamp, "Start time cannot be in the past");
-        require(cliffDuration <= duration, "Cliff longer than duration");
-        require(duration > 0 && slicePeriodSeconds > 0, "Invalid duration or slice");
-        require(cliffUnlockPercent <= 100, "Invalid cliff %");
-        require(totalAmount > 0, "Total amount must be greater than 0"); // XSC3: Input validation
-        require(start >= block.timestamp, "Start time cannot be in the past"); // XSC3: Input validation
-        require(cliffDuration <= duration, "Cliff duration cannot exceed total duration"); // XSC3: Input validation
-        
+        require(beneficiary != address(0), "HypeyVesting: Zero address");
+        require(totalAmount > 0, "HypeyVesting: Zero amount prohibited");
+        require(start >= block.timestamp, "HypeyVesting: Start in past");
+        require(cliffDuration <= duration, "HypeyVesting: Cliff > duration");
+        require(duration > 0 && slicePeriodSeconds > 0, "HypeyVesting: Invalid duration");
+        require(cliffUnlockPercent <= 100, "HypeyVesting: Invalid %");
         vestingSchedules[beneficiary].push(
             VestingSchedule({
                 initialized: true,
@@ -109,6 +108,7 @@ contract HypeyVesting is Initializable, OwnableUpgradeable, PausableUpgradeable,
             })
         );
         emit VestingCreated(beneficiary, vestingSchedules[beneficiary].length - 1, totalAmount);
+        emit VestingModified(beneficiary, vestingSchedules[beneficiary].length - 1);
     }
     
     // XSC1: Merkle Root functionality for batch vesting
@@ -308,10 +308,12 @@ contract HypeyVesting is Initializable, OwnableUpgradeable, PausableUpgradeable,
 
     function pause() external onlyRole(MULTISIG_ADMIN_ROLE) {
         _pause();
+        emit EmergencyAction("pause", msg.sender);
     }
 
     function unpause() external onlyRole(MULTISIG_ADMIN_ROLE) {
         _unpause();
+        emit EmergencyAction("unpause", msg.sender);
     }
     
     function builder() external pure returns (string memory) {

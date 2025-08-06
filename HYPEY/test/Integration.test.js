@@ -139,16 +139,16 @@ describe("HYPEY Integration Tests", function () {
       const { token, treasury, vesting, multisig, beneficiary } = await loadFixture(deployFullSystemFixture);
       
       const vestingAmount = ethers.parseEther("100000000");
-      const scheduleAmount = 50; // 50 tokens (within available 99)
+      const scheduleAmount = ethers.parseEther("50"); // 50 ether tokens for proper precision
       
       // Fund vesting contract with direct token distribution
       await token.connect(multisig).distributeInitialSupply(
         await vesting.getAddress(),
-        99 // Use 99 tokens to avoid burn issues
+        ethers.parseEther("99") // Use 99 ether tokens to avoid burn issues
       );
       
       // Create vesting schedule
-      const start = await time.latest();
+      const start = (await time.latest()) + 60; // Add 60 seconds buffer
       const cliffDuration = 86400 * 30; // 30 days
       const duration = 86400 * 365; // 1 year
       const cliffUnlockPercent = 25; // 25%
@@ -163,7 +163,8 @@ describe("HYPEY Integration Tests", function () {
         cliffUnlockPercent
       );
       
-      // Fast forward past cliff
+      // Fast forward to start time first, then past cliff
+      await time.increaseTo(start);
       await time.increase(cliffDuration + 1);
       
       // Claim tokens
@@ -173,9 +174,15 @@ describe("HYPEY Integration Tests", function () {
       
       expect(finalBalance).to.be.gt(initialBalance);
       
-      // Should have received approximately 25% (cliff unlock)
-      const expectedCliffAmount = (BigInt(scheduleAmount) * BigInt(cliffUnlockPercent)) / 100n;
-      expect(finalBalance - initialBalance).to.be.closeTo(expectedCliffAmount, 5); // Allow 5 token tolerance
+      // Should have received cliff unlock (25%) plus some linear vesting
+      const cliffAmount = (BigInt(scheduleAmount) * BigInt(cliffUnlockPercent)) / 100n;
+      const remainingAmount = BigInt(scheduleAmount) - cliffAmount;
+      const timeFromStart = BigInt(cliffDuration + 1);
+      const totalDuration = BigInt(duration);
+      const linearVested = (remainingAmount * timeFromStart) / totalDuration;
+      const expectedTotal = cliffAmount + linearVested;
+      
+      expect(finalBalance - initialBalance).to.be.closeTo(expectedTotal, ethers.parseEther("1")); // Allow 1 ether tolerance
     });
   });
 
@@ -312,7 +319,7 @@ describe("HYPEY Integration Tests", function () {
       await expect(vesting.connect(user1).addVestingSchedule(
         user1.address,
         ethers.parseEther("1000"),
-        await time.latest(),
+        (await time.latest()) + 60, // Add 60 seconds buffer
         0,
         86400 * 365,
         86400,
@@ -338,7 +345,7 @@ describe("HYPEY Integration Tests", function () {
       await expect(vesting.connect(multisig).addVestingSchedule(
         user1.address,
         ethers.parseEther("1000"),
-        await time.latest(),
+        (await time.latest()) + 60, // Add 60 seconds buffer
         0,
         86400 * 365,
         86400,
@@ -468,7 +475,7 @@ describe("HYPEY Integration Tests", function () {
       const vestingTx = await vesting.connect(multisig).addVestingSchedule(
         beneficiary.address,
         ethers.parseEther("10000"),
-        await time.latest(),
+        (await time.latest()) + 60, // Add 60 seconds buffer
         0,
         86400 * 365,
         86400,

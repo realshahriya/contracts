@@ -48,6 +48,7 @@ ehthumbs.db
 Thumbs.db
 
 # Artifacts
+artifacts/
 
 # Logs
 logs/

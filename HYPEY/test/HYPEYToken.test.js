@@ -6,12 +6,19 @@ describe("HYPEYToken", function () {
   async function deployTokenFixture() {
     const [owner, reserveBurn, platform, nftContract, user1, user2, timelockAdmin] = await ethers.getSigners();
 
-    // Deploy a TimelockController for the initializer
+    // Deploy a MockTimelock for the initializer
     const minDelay = 0;
     const proposers = [timelockAdmin.address];
     const executors = [timelockAdmin.address];
-    const Timelock = await ethers.getContractFactory("TimelockControllerUpgradeable");
-    const timelock = await Timelock.deploy(minDelay, proposers, executors);
+    const MockTimelock = await ethers.getContractFactory("MockTimelock");
+    const timelock = await upgrades.deployProxy(
+      MockTimelock,
+      [minDelay, proposers, executors, timelockAdmin.address],
+      {
+        initializer: "initialize",
+        kind: "uups",
+      }
+    );
     await timelock.waitForDeployment();
 
     const HYPEYToken = await ethers.getContractFactory("HYPEYToken");
@@ -24,9 +31,6 @@ describe("HYPEYToken", function () {
       }
     );
     await token.waitForDeployment();
-
-    // Initialize owner
-    await token.initializeOwner(owner.address);
 
     return {
       token,
@@ -145,6 +149,53 @@ describe("HYPEYToken", function () {
       expect(await token.totalSupply()).to.equal(initialTotalSupply - burnNow);
     });
 
+    // VSC5: Test for dusting attack protection
+    it("Should apply burn based on sender balance percentage (VSC5 fix)", async function () {
+      const { token, owner, user1, user2, reserveBurn } = await loadFixture(deployTokenFixture);
+      const userBalance = ethers.parseEther("10000"); // 10,000 tokens
+      const smallAmount = ethers.parseEther("150"); // Above MIN_EXEMPT_AMOUNT (100 HYPEY), should trigger burn
+      
+      // Transfer to user1 first
+      await token.connect(owner).distributeInitialSupply(user1.address, userBalance);
+      
+      const initialTotalSupply = await token.totalSupply();
+      const initialReserveBalance = await token.balanceOf(reserveBurn.address);
+      
+      // Transfer should trigger burn because it's above MIN_EXEMPT_AMOUNT
+      await token.connect(user1).transfer(user2.address, smallAmount);
+      
+      const burnRate = await token.burnRateBasisPoints();
+      const burnAmount = (smallAmount * burnRate) / 10000n;
+      const burnNow = burnAmount / 2n;
+      const toReserve = burnAmount - burnNow;
+      const transferAmount = smallAmount - burnAmount;
+      
+      expect(await token.balanceOf(user2.address)).to.equal(transferAmount);
+      expect(await token.balanceOf(reserveBurn.address)).to.equal(initialReserveBalance + toReserve);
+      expect(await token.totalSupply()).to.equal(initialTotalSupply - burnNow);
+    });
+
+    // VSC5: Test exempt wallet functionality
+    it("Should allow exempt wallets to bypass burn on small transfers", async function () {
+      const { token, owner, user1, user2 } = await loadFixture(deployTokenFixture);
+      const userBalance = ethers.parseEther("10000");
+      const smallAmount = ethers.parseEther("5");
+      
+      // Set user1 as exempt
+      await token.connect(owner).setExemptFromBurn(user1.address, true);
+      
+      // Transfer to user1 first
+      await token.connect(owner).distributeInitialSupply(user1.address, userBalance);
+      
+      const initialTotalSupply = await token.totalSupply();
+      
+      // Small transfer from exempt wallet should not trigger burn
+      await token.connect(user1).transfer(user2.address, smallAmount);
+      
+      expect(await token.balanceOf(user2.address)).to.equal(smallAmount);
+      expect(await token.totalSupply()).to.equal(initialTotalSupply); // No burn
+    });
+
     it("Should skip burn for small transfers", async function () {
       const { token, owner, user1, user2 } = await loadFixture(deployTokenFixture);
       const smallAmount = ethers.parseEther("50"); // Below 100 HYPEY minimum
@@ -177,6 +228,31 @@ describe("HYPEYToken", function () {
       
       expect(await token.balanceOf(user2.address)).to.equal(amount);
       expect(await token.totalSupply()).to.equal(initialTotalSupply); // No burn
+    });
+  });
+
+  // VSC5: New test section for exempt wallet management
+  describe("Exempt Wallet Management (VSC5)", function () {
+    it("Should allow owner to set exempt wallets", async function () {
+      const { token, owner, user1 } = await loadFixture(deployTokenFixture);
+      
+      await token.connect(owner).setExemptFromBurn(user1.address, true);
+      expect(await token.isExempt(user1.address)).to.be.true;
+    });
+
+    it("Should allow owner to remove exempt status", async function () {
+      const { token, owner, user1 } = await loadFixture(deployTokenFixture);
+      
+      await token.connect(owner).setExemptFromBurn(user1.address, true);
+      await token.connect(owner).setExemptFromBurn(user1.address, false);
+      expect(await token.isExempt(user1.address)).to.be.false;
+    });
+
+    it("Should not allow non-owner to set exempt wallets", async function () {
+      const { token, user1, user2 } = await loadFixture(deployTokenFixture);
+      
+      await expect(token.connect(user1).setExemptFromBurn(user2.address, true))
+        .to.be.reverted;
     });
   });
 
@@ -313,56 +389,56 @@ describe("HYPEYToken", function () {
       expect(await token.builder()).to.equal("TOPAY DEV TEAM");
     });
   });
-});
 
-describe("DEX Buy/Sell Tax Logic", function () {
-  it("Should apply 0% tax on buys from DEX pair", async function () {
-    const { token, owner, user1, user2 } = await loadFixture(deployTokenFixture);
-    // Simulate DEX pair
-    await token.connect(owner).setDexPair(user1.address);
-    // Transfer from DEX pair (buy)
-    const amount = ethers.parseEther("1000");
-    await token.connect(owner).distributeInitialSupply(user1.address, amount);
-    await token.connect(user1).transfer(user2.address, amount);
-    // user1 is DEX pair, user2 is buyer
-    expect(await token.balanceOf(user2.address)).to.equal(amount);
-  });
+  describe("DEX Buy/Sell Tax Logic", function () {
+    it("Should apply 0% tax on buys from DEX pair", async function () {
+      const { token, owner, user1, user2 } = await loadFixture(deployTokenFixture);
+      // Simulate DEX pair
+      await token.connect(owner).setDexPair(user1.address);
+      // Transfer from DEX pair (buy)
+      const amount = ethers.parseEther("1000");
+      await token.connect(owner).distributeInitialSupply(user1.address, amount);
+      await token.connect(user1).transfer(user2.address, amount);
+      // user1 is DEX pair, user2 is buyer
+      expect(await token.balanceOf(user2.address)).to.equal(amount);
+    });
 
-  it("Should apply 4% sell tax during the day", async function () {
-    const { token, owner, user1, user2, reserveBurn } = await loadFixture(deployTokenFixture);
-    await token.connect(owner).setDexPair(user2.address);
-    await token.connect(owner).setNightMode(false); // Day
-    const amount = ethers.parseEther("1000");
-    await token.connect(owner).distributeInitialSupply(user1.address, amount);
-    const initialReserve = await token.balanceOf(reserveBurn.address);
-    const initialSupply = await token.totalSupply();
-    // user1 sells to DEX pair (user2)
-    await token.connect(user1).transfer(user2.address, amount);
-    const burnAmount = (amount * 400n) / 10000n;
-    const burnNow = burnAmount / 2n;
-    const toReserve = burnAmount - burnNow;
-    const received = amount - burnAmount;
-    expect(await token.balanceOf(user2.address)).to.equal(received);
-    expect(await token.balanceOf(reserveBurn.address)).to.equal(initialReserve + toReserve);
-    expect(await token.totalSupply()).to.equal(initialSupply - burnNow);
-  });
+    it("Should apply 4% sell tax during the day", async function () {
+      const { token, owner, user1, user2, reserveBurn } = await loadFixture(deployTokenFixture);
+      await token.connect(owner).setDexPair(user2.address);
+      await token.connect(owner).setNightMode(false); // Day
+      const amount = ethers.parseEther("1000");
+      await token.connect(owner).distributeInitialSupply(user1.address, amount);
+      const initialReserve = await token.balanceOf(reserveBurn.address);
+      const initialSupply = await token.totalSupply();
+      // user1 sells to DEX pair (user2)
+      await token.connect(user1).transfer(user2.address, amount);
+      const burnAmount = (amount * 400n) / 10000n;
+      const burnNow = burnAmount / 2n;
+      const toReserve = burnAmount - burnNow;
+      const received = amount - burnAmount;
+      expect(await token.balanceOf(user2.address)).to.equal(received);
+      expect(await token.balanceOf(reserveBurn.address)).to.equal(initialReserve + toReserve);
+      expect(await token.totalSupply()).to.equal(initialSupply - burnNow);
+    });
 
-  it("Should apply 16% sell tax at night", async function () {
-    const { token, owner, user1, user2, reserveBurn } = await loadFixture(deployTokenFixture);
-    await token.connect(owner).setDexPair(user2.address);
-    await token.connect(owner).setNightMode(true); // Night
-    const amount = ethers.parseEther("1000");
-    await token.connect(owner).distributeInitialSupply(user1.address, amount);
-    const initialReserve = await token.balanceOf(reserveBurn.address);
-    const initialSupply = await token.totalSupply();
-    // user1 sells to DEX pair (user2)
-    await token.connect(user1).transfer(user2.address, amount);
-    const burnAmount = (amount * 1600n) / 10000n;
-    const burnNow = burnAmount / 2n;
-    const toReserve = burnAmount - burnNow;
-    const received = amount - burnAmount;
-    expect(await token.balanceOf(user2.address)).to.equal(received);
-    expect(await token.balanceOf(reserveBurn.address)).to.equal(initialReserve + toReserve);
-    expect(await token.totalSupply()).to.equal(initialSupply - burnNow);
+    it("Should apply 16% sell tax at night", async function () {
+      const { token, owner, user1, user2, reserveBurn } = await loadFixture(deployTokenFixture);
+      await token.connect(owner).setDexPair(user2.address);
+      await token.connect(owner).setNightMode(true); // Night
+      const amount = ethers.parseEther("1000");
+      await token.connect(owner).distributeInitialSupply(user1.address, amount);
+      const initialReserve = await token.balanceOf(reserveBurn.address);
+      const initialSupply = await token.totalSupply();
+      // user1 sells to DEX pair (user2)
+      await token.connect(user1).transfer(user2.address, amount);
+      const burnAmount = (amount * 1600n) / 10000n;
+      const burnNow = burnAmount / 2n;
+      const toReserve = burnAmount - burnNow;
+      const received = amount - burnAmount;
+      expect(await token.balanceOf(user2.address)).to.equal(received);
+      expect(await token.balanceOf(reserveBurn.address)).to.equal(initialReserve + toReserve);
+      expect(await token.totalSupply()).to.equal(initialSupply - burnNow);
+    });
   });
 });

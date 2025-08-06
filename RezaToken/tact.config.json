@@ -1,19 +1,25 @@
 {
+  "$schema": "https://raw.githubusercontent.com/tact-lang/tact/main/src/config/configSchema.json",
   "projects": [
     {
       "name": "RezaTokenMinter",
-      "path": "./RezaTokenMinter.tact",
-      "output": "./build/"
-    },
-    {
-      "name": "CustomJettonWallet", 
-      "path": "./CustomJettonWallet.tact",
-      "output": "./build/"
+      "path": "contracts/RezaTokenMinter.tact",
+      "output": "build\\RezaTokenMinter",
+      "options": {
+        "debug": false,
+        "external": false
+      },
+      "mode": "full"
     },
     {
       "name": "PriceFeed",
-      "path": "./PriceFeed.tact", 
-      "output": "./build/"
+      "path": "contracts/PriceFeed.tact",
+      "output": "build\\PriceFeed",
+      "options": {
+        "debug": false,
+        "external": false
+      },
+      "mode": "full"
     }
   ]
 }

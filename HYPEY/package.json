@@ -53,7 +53,7 @@
     "@types/mocha": ">=9.1.0",
     "chai": "^4.2.0",
     "ethers": "^6.4.0",
-    "hardhat": "^2.26.1",
+    "hardhat": "^2.26.2",
     "hardhat-gas-reporter": "^1.0.8",
     "solidity-coverage": "^0.8.1",
     "typechain": "^8.3.0",

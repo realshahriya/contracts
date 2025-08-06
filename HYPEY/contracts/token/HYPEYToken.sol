@@ -104,11 +104,11 @@ contract HYPEYToken is ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable, Ac
             return;
         }
         uint256 senderBalance = balanceOf(sender);
-        uint256 minBurnAmount = senderBalance * 5 / 1000;
+        uint256 minBurnAmount = senderBalance * 1 / 1000; // 0.1% of balance
         if (minBurnAmount < MIN_EXEMPT_AMOUNT) {
             minBurnAmount = MIN_EXEMPT_AMOUNT;
         }
-        if (amount < minBurnAmount) {
+        if (amount < minBurnAmount && !isExempt(sender)) {
             super._transfer(sender, recipient, amount);
             return;
         }
@@ -175,6 +175,10 @@ contract HYPEYToken is ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable, Ac
         require(wallet != address(0), "Invalid wallet address");
         exemptFromBurn[wallet] = exempt;
         emit ExemptStatusChanged(wallet, exempt);
+    }
+    // Add: Only allow small transfer exemption for specific addresses
+    function isExempt(address sender) public view returns (bool) {
+        return exemptFromBurn[sender];
     }
     
     // VSC4: Dynamic rate manipulation protection

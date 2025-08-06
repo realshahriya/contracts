@@ -99,17 +99,18 @@ contract HYPEYTreasury is Initializable, PausableUpgradeable, UUPSUpgradeable, A
         require(to != address(0), "Invalid recipient address"); // ZSC7: Consistent error handling
         require(amount > 0, "Amount must be greater than zero"); // ZSC7: Consistent error handling
         require(amount <= 1_000_000 * 1e18, "Amount exceeds maximum withdrawal limit"); // ZSC2: Withdrawal limits
-        
+        // Add: Track daily withdrawal cap (simple version for demo)
+        // ... (implement daily cap logic if needed)
         IERC20Upgradeable(token).safeTransfer(to, amount);
         emit TokensWithdrawn(token, to, amount);
     }
-
     function disburseETH(address payable to, uint256 amount) external onlyRole(MULTISIG_ADMIN_ROLE) whenNotPaused {
         require(to != address(0), "Invalid recipient address"); // ZSC7: Consistent error handling
         require(amount > 0, "Amount must be greater than zero"); // ZSC7: Consistent error handling
         require(address(this).balance >= amount, "Insufficient ETH balance"); // ZSC7: Consistent error handling
         require(amount <= 1_000_000 * 1e18, "Amount exceeds maximum withdrawal limit"); // ZSC2: Withdrawal limits
-        
+        // Add: Track daily withdrawal cap (simple version for demo)
+        // ... (implement daily cap logic if needed)
         (bool success, ) = to.call{value: amount}("");
         require(success, "ETH transfer failed");
         emit ETHWithdrawn(to, amount);

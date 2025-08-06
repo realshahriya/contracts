@@ -27,20 +27,19 @@ describe("HypeyVesting", function () {
     const MockToken = await ethers.getContractFactory("HYPEYToken");
     const token = await upgrades.deployProxy(
       MockToken,
-      [admin.address], // reserve burn address
+      [admin.address, await timelock.getAddress(), admin.address], // reserveBurnAddress, timelockAddress, initialOwner
       {
         initializer: "initialize",
         kind: "uups",
       }
     );
     await token.waitForDeployment();
-    await token.initializeOwner(admin.address);
 
     // Deploy vesting contract
     const HypeyVesting = await ethers.getContractFactory("HypeyVesting");
     const vesting = await upgrades.deployProxy(
       HypeyVesting,
-      [await token.getAddress(), admin.address, await timelock.getAddress()],
+      [await token.getAddress(), admin.address, await timelock.getAddress()], // tokenAddress, _owner, timelockAddress
       {
         initializer: "initialize",
         kind: "uups",
@@ -124,7 +123,7 @@ describe("HypeyVesting", function () {
       const { vesting, admin, beneficiary1 } = await loadFixture(deployVestingFixture);
       
       const totalAmount = 100; // 100 tokens (within available 1000)
-      const start = await time.latest();
+      const start = (await time.latest()) + 60; // Add 60 seconds buffer
       const cliffDuration = 86400 * 30; // 30 days
       const duration = 86400 * 365; // 1 year
       const slicePeriodSeconds = 86400; // 1 day
@@ -140,12 +139,76 @@ describe("HypeyVesting", function () {
         cliffUnlockPercent
       ))
         .to.emit(vesting, "VestingCreated")
-        .withArgs(beneficiary1.address, 0, totalAmount);
+        .withArgs(beneficiary1.address, 0, totalAmount)
+        .and.to.emit(vesting, "VestingModified") // XSC4: New event
+        .withArgs(beneficiary1.address, 0);
       
       const scheduleInfo = await vesting.getVestingInfo(beneficiary1.address);
       expect(scheduleInfo.schedules.length).to.equal(1);
       expect(scheduleInfo.schedules[0].totalAmount).to.equal(totalAmount);
       expect(scheduleInfo.schedules[0].cliffUnlockPercent).to.equal(cliffUnlockPercent);
+    });
+
+    // XSC3: Input validation tests
+    it("Should reject zero address beneficiary (XSC3)", async function () {
+      const { vesting, admin } = await loadFixture(deployVestingFixture);
+      
+      await expect(vesting.connect(admin).addVestingSchedule(
+        ethers.ZeroAddress, // Zero address
+        100,
+        (await time.latest()) + 60, // Add 60 seconds buffer
+        86400 * 30,
+        86400 * 365,
+        86400,
+        25
+      ))
+        .to.be.revertedWith("HypeyVesting: Zero address");
+    });
+
+    it("Should reject zero amount (XSC3)", async function () {
+      const { vesting, admin, beneficiary1 } = await loadFixture(deployVestingFixture);
+      
+      await expect(vesting.connect(admin).addVestingSchedule(
+        beneficiary1.address,
+        0, // Zero amount
+        (await time.latest()) + 60, // Add 60 seconds buffer
+        86400 * 30,
+        86400 * 365,
+        86400,
+        25
+      ))
+        .to.be.revertedWith("HypeyVesting: Zero amount prohibited");
+    });
+
+    it("Should reject start time in past (XSC3)", async function () {
+      const { vesting, admin, beneficiary1 } = await loadFixture(deployVestingFixture);
+      const pastTime = (await time.latest()) - 86400; // 1 day ago
+      
+      await expect(vesting.connect(admin).addVestingSchedule(
+        beneficiary1.address,
+        100,
+        pastTime, // Past time
+        86400 * 30,
+        86400 * 365,
+        86400,
+        25
+      ))
+        .to.be.revertedWith("HypeyVesting: Start in past");
+    });
+
+    it("Should reject cliff duration longer than total duration (XSC3)", async function () {
+      const { vesting, admin, beneficiary1 } = await loadFixture(deployVestingFixture);
+      
+      await expect(vesting.connect(admin).addVestingSchedule(
+        beneficiary1.address,
+        100,
+        (await time.latest()) + 60, // Add 60 seconds buffer
+        86400 * 400, // Cliff longer than duration
+        86400 * 365, // Total duration
+        86400,
+        25
+      ))
+        .to.be.revertedWith("HypeyVesting: Cliff > duration");
     });
 
     it("Should not allow invalid duration", async function () {
@@ -154,13 +217,13 @@ describe("HypeyVesting", function () {
       await expect(vesting.connect(admin).addVestingSchedule(
         beneficiary1.address,
         100, // 100 tokens
-        await time.latest(),
-        86400 * 30,
+        (await time.latest()) + 60, // Add 60 seconds buffer
+        0, // No cliff
         0, // Invalid duration
         86400,
         25
       ))
-        .to.be.revertedWith("Invalid duration or slice");
+        .to.be.revertedWith("HypeyVesting: Invalid duration");
     });
 
     it("Should not allow invalid cliff unlock percentage", async function () {
@@ -169,13 +232,13 @@ describe("HypeyVesting", function () {
       await expect(vesting.connect(admin).addVestingSchedule(
         beneficiary1.address,
         100, // 100 tokens
-        await time.latest(),
+        (await time.latest()) + 60, // Add 60 seconds buffer
         86400 * 30,
         86400 * 365,
         86400,
         150 // Invalid cliff percent > 100
       ))
-        .to.be.revertedWith("Invalid cliff %");
+        .to.be.revertedWith("HypeyVesting: Invalid %");
     });
 
     it("Should not allow non-owner to add vesting schedule", async function () {
@@ -184,7 +247,7 @@ describe("HypeyVesting", function () {
       await expect(vesting.connect(user1).addVestingSchedule(
         beneficiary1.address,
         100, // 100 tokens
-        await time.latest(),
+        (await time.latest()) + 60, // Add 60 seconds buffer
         86400 * 30,
         86400 * 365,
         86400,
@@ -194,12 +257,57 @@ describe("HypeyVesting", function () {
     });
   });
 
+  // XSC4: Test emergency action events
+  describe("Emergency Actions (XSC4)", function () {
+    it("Should emit EmergencyAction event when pausing", async function () {
+      const { vesting, admin } = await loadFixture(deployVestingFixture);
+      
+      await expect(vesting.connect(admin).pause())
+        .to.emit(vesting, "EmergencyAction")
+        .withArgs("pause", admin.address);
+      
+      expect(await vesting.paused()).to.be.true;
+    });
+
+    it("Should emit EmergencyAction event when unpausing", async function () {
+      const { vesting, admin } = await loadFixture(deployVestingFixture);
+      
+      // First pause
+      await vesting.connect(admin).pause();
+      
+      // Then unpause
+      await expect(vesting.connect(admin).unpause())
+        .to.emit(vesting, "EmergencyAction")
+        .withArgs("unpause", admin.address);
+      
+      expect(await vesting.paused()).to.be.false;
+    });
+
+    it("Should not allow non-admin to pause", async function () {
+      const { vesting, user1 } = await loadFixture(deployVestingFixture);
+      
+      await expect(vesting.connect(user1).pause())
+        .to.be.reverted;
+    });
+
+    it("Should not allow non-admin to unpause", async function () {
+      const { vesting, admin, user1 } = await loadFixture(deployVestingFixture);
+      
+      // Admin pauses first
+      await vesting.connect(admin).pause();
+      
+      // User1 cannot unpause
+      await expect(vesting.connect(user1).unpause())
+        .to.be.reverted;
+    });
+  });
+
   describe("Vesting Calculations", function () {
     it("Should return 0 before cliff", async function () {
       const { vesting, admin, beneficiary1 } = await loadFixture(deployVestingFixture);
       
       const totalAmount = 100; // 100 tokens
-      const start = await time.latest();
+      const start = (await time.latest()) + 60; // Add 60 seconds buffer
       const cliffDuration = 86400 * 30; // 30 days
       
       await vesting.connect(admin).addVestingSchedule(
@@ -220,7 +328,7 @@ describe("HypeyVesting", function () {
       const { vesting, admin, beneficiary1 } = await loadFixture(deployVestingFixture);
       
       const totalAmount = 100; // 100 tokens
-      const start = await time.latest();
+      const start = (await time.latest()) + 60; // Add 60 seconds buffer
       const cliffDuration = 86400 * 30; // 30 days
       const cliffUnlockPercent = 25; // 25%
       
@@ -234,7 +342,8 @@ describe("HypeyVesting", function () {
         cliffUnlockPercent
       );
       
-      // Fast forward past cliff
+      // Fast forward to start time first, then past cliff
+      await time.increaseTo(start);
       await time.increase(cliffDuration + 1);
       
       const scheduleInfo = await vesting.getVestingInfo(beneficiary1.address);
@@ -246,7 +355,7 @@ describe("HypeyVesting", function () {
       const { vesting, admin, beneficiary1 } = await loadFixture(deployVestingFixture);
       
       const totalAmount = 100; // 100 tokens
-      const start = await time.latest();
+      const start = (await time.latest()) + 60; // Add 60 seconds buffer
       const cliffDuration = 0; // No cliff
       const duration = 86400 * 100; // 100 days
       const slicePeriodSeconds = 86400; // 1 day
@@ -273,7 +382,7 @@ describe("HypeyVesting", function () {
       const { vesting, admin, beneficiary1 } = await loadFixture(deployVestingFixture);
       
       const totalAmount = 100; // 100 tokens
-      const start = await time.latest();
+      const start = (await time.latest()) + 60; // Add 60 seconds buffer
       const duration = 86400 * 100; // 100 days
       
       await vesting.connect(admin).addVestingSchedule(
@@ -286,7 +395,8 @@ describe("HypeyVesting", function () {
         0
       );
       
-      // Fast forward past vesting period
+      // Fast forward to start time first, then past vesting period
+      await time.increaseTo(start);
       await time.increase(duration + 1);
       
       const scheduleInfo = await vesting.getVestingInfo(beneficiary1.address);
@@ -299,7 +409,7 @@ describe("HypeyVesting", function () {
       const { vesting, admin, beneficiary1, token } = await loadFixture(deployVestingFixture);
       
       const totalAmount = 100; // 100 tokens
-      const start = await time.latest();
+      const start = (await time.latest()) + 60; // Add 60 seconds buffer
       const cliffDuration = 86400 * 30;
       const cliffUnlockPercent = 25;
       
@@ -313,7 +423,8 @@ describe("HypeyVesting", function () {
         cliffUnlockPercent
       );
       
-      // Fast forward past cliff
+      // Fast forward to start time first, then past cliff
+      await time.increaseTo(start);
       await time.increase(cliffDuration + 1);
       
       const initialBalance = await token.balanceOf(beneficiary1.address);
@@ -329,7 +440,7 @@ describe("HypeyVesting", function () {
       const { vesting, admin, beneficiary1, user1, token } = await loadFixture(deployVestingFixture);
       
       const totalAmount = 100; // 100 tokens
-      const start = await time.latest();
+      const start = (await time.latest()) + 60; // Add 60 seconds buffer
       const cliffDuration = 86400 * 30;
       
       await vesting.connect(admin).addVestingSchedule(
@@ -342,7 +453,8 @@ describe("HypeyVesting", function () {
         25
       );
       
-      // Fast forward past cliff
+      // Fast forward to start time first, then past cliff
+      await time.increaseTo(start);
       await time.increase(cliffDuration + 1);
       
       const initialBalance = await token.balanceOf(beneficiary1.address);
@@ -359,7 +471,7 @@ describe("HypeyVesting", function () {
       const { vesting, admin, beneficiary1 } = await loadFixture(deployVestingFixture);
       
       const totalAmount = 100; // 100 tokens
-      const start = await time.latest();
+      const start = (await time.latest()) + 60; // Add 60 seconds buffer
       const cliffDuration = 86400 * 30;
       
       await vesting.connect(admin).addVestingSchedule(
@@ -388,7 +500,7 @@ describe("HypeyVesting", function () {
       const { vesting, admin, beneficiary1 } = await loadFixture(deployVestingFixture);
       
       const totalAmount = 100; // 100 tokens
-      const start = await time.latest();
+      const start = (await time.latest()) + 60; // Add 60 seconds buffer
       
       await vesting.connect(admin).addVestingSchedule(
         beneficiary1.address,
@@ -465,7 +577,7 @@ describe("HypeyVesting", function () {
       
       const totalAmount1 = 100; // 100 tokens
       const totalAmount2 = 50; // 50 tokens
-      const start = await time.latest();
+      const start = (await time.latest()) + 60; // Add 60 seconds buffer
       
       // Add two vesting schedules
       await vesting.connect(admin).addVestingSchedule(
@@ -496,7 +608,7 @@ describe("HypeyVesting", function () {
       const { vesting, admin, beneficiary1 } = await loadFixture(deployVestingFixture);
       
       const totalAmount = 100; // 100 tokens
-      const start = await time.latest();
+      const start = (await time.latest()) + 60; // Add 60 seconds buffer
       
       await vesting.connect(admin).addVestingSchedule(
         beneficiary1.address,
@@ -544,7 +656,7 @@ describe("HypeyVesting", function () {
     it("Should handle multiple vesting schedules for same beneficiary", async function () {
       const { vesting, admin, beneficiary1 } = await loadFixture(deployVestingFixture);
       
-      const start = await time.latest();
+      const start = (await time.latest()) + 60; // Add 60 seconds buffer
       
       // Add multiple schedules
       await vesting.connect(admin).addVestingSchedule(
