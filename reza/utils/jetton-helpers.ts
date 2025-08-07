@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { Sha256 } from "@aws-crypto/sha256-js";
 import { Dictionary, beginCell, Cell } from "@ton/core";
 
 const ONCHAIN_CONTENT_PREFIX = 0x00;
@@ -6,7 +6,9 @@ const SNAKE_PREFIX = 0x00;
 const CELL_MAX_SIZE_BYTES = Math.floor((1023 - 8) / 8);
 
 const sha256 = (str: string) => {
-    return createHash('sha256').update(str).digest();
+    const sha = new Sha256();
+    sha.update(str);
+    return Buffer.from(sha.digestSync());
 };
 
 const toKey = (key: string) => {

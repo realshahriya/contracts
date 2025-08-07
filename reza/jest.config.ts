@@ -1,5 +1,10 @@
 import type { Config } from 'jest';
 
+// Add BigInt serialization support
+(BigInt.prototype as any).toJSON = function() {
+    return this.toString();
+};
+
 const config: Config = {
     preset: 'ts-jest',
     globalSetup: './jest.setup.ts',

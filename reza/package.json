@@ -1,12 +1,13 @@
 {
-    "name": "reza",
+    "name": "taxx",
     "version": "0.0.1",
     "scripts": {
         "bp": "blueprint",
-        "start": "blueprint run",
+        "start": "blueprint run deployJettonMinter",
         "build": "blueprint build",
         "test": "jest --verbose",
-        "release": "blueprint pack && npm publish --access public"
+        "release": "blueprint pack && npm publish --access public",
+        "deploy": "blueprint run deployJettonMinter"
     },
     "dependencies": {
         "@ton/core": "~0"
