@@ -15,12 +15,19 @@ const toKey = (key: string) => {
     return BigInt(`0x${sha256(key).toString("hex")}`);
 };
 
-export function buildOnchainMetadata(data: { name: string; description: string; image: string }): Cell {
+export function buildOnchainMetadata(data: { 
+    name: string; 
+    description: string; 
+    image: string; 
+    symbol: string; 
+    decimals: number 
+}): Cell {
     let dict = Dictionary.empty(Dictionary.Keys.BigUint(256), Dictionary.Values.Cell());
 
     // Store the on-chain metadata in the dictionary
     Object.entries(data).forEach(([key, value]) => {
-        dict.set(toKey(key), makeSnakeCell(Buffer.from(value, "utf8")));
+        const stringValue = typeof value === 'number' ? value.toString() : value;
+        dict.set(toKey(key), makeSnakeCell(Buffer.from(stringValue, "utf8")));
     });
 
     return beginCell().storeInt(ONCHAIN_CONTENT_PREFIX, 8).storeDict(dict).endCell();

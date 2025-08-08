@@ -3,7 +3,7 @@ build/
 dist/
 *.boc
 *.fif
-*.fc
+
 
 # Node.js
 node_modules/
