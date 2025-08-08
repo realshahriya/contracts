@@ -23,6 +23,8 @@
     "upgrade:sepolia": "hardhat run scripts/upgrade.js --network sepolia",
     "upgrade:mainnet": "hardhat run scripts/upgrade.js --network mainnet",
     "setup": "node scripts/setup.js",
+    "flatten": "node scripts/flatten.js",
+    "flatten:clean": "rimraf flattened && node scripts/flatten.js",
     "node": "hardhat node",
     "clean": "hardhat clean",
     "lint": "eslint . --ext .js,.ts",
