@@ -1,7 +1,8 @@
-import { Address, toNano } from '@ton/core';
-import { Token } from '../wrappers/token';
+import { toNano } from '@ton/core';
+import { RezaToken } from '../wrappers/RezaToken';
 import { NetworkProvider } from '@ton/blueprint';
-import { getContractAddress, getDefaultGas, validateConfig } from './config';
+import { getContractAddress, validateConfig } from './config';
+import { extractMetadata, formatTokenAmount } from '../utils/metadata-helpers';
 
 export async function run(provider: NetworkProvider) {
     console.log('🔥 Burn Operations Script');
@@ -10,17 +11,16 @@ export async function run(provider: NetworkProvider) {
     // Validate configuration and get contract address
     validateConfig();
     const contractAddress = getContractAddress();
-    const token = provider.open(Token.fromAddress(contractAddress));
+    const token = provider.open(RezaToken.fromAddress(contractAddress));
 
     try {
         // Get current contract state
         console.log('\n📊 Current Contract State:');
         const jettonData = await token.getGetJettonData();
-        const symbol = await token.getGetSymbol();
-        const name = await token.getGetName();
+        const metadata = extractMetadata(jettonData.content);
         
-        console.log(`Token: ${name} (${symbol})`);
-        console.log(`Total Supply: ${(Number(jettonData.totalSupply) / 1e9).toFixed(2)} ${symbol}`);
+        console.log(`Token: ${metadata.name} (${metadata.symbol})`);
+        console.log(`Total Supply: ${formatTokenAmount(jettonData.totalSupply, metadata.decimals)} ${metadata.symbol}`);
         console.log(`Owner: ${jettonData.owner.toString()}`);
 
         // Get sender information
@@ -36,13 +36,18 @@ export async function run(provider: NetworkProvider) {
         const senderWallet = await token.getGetWalletAddress(senderAddress);
         console.log(`Sender Wallet: ${senderWallet.toString()}`);
 
-        // Check if sender is excluded from transaction limits
-        const isExcluded = await token.getIsExcludedAddress(senderAddress);
-        console.log(`Excluded from Limits: ${isExcluded}`);
-
-        // Get current transaction limit
-        const transactionLimit = await token.getGetTransactionLimit();
-        console.log(`Transaction Limit: ${(Number(transactionLimit) / 1e9).toFixed(2)} ${symbol}`);
+        // Check transaction limits and exclusions
+        try {
+            const transactionLimit = await token.getGetMaxTxAmount();
+            const limitsEnabled = await token.getGetLimitsEnabled();
+            const isExcluded = await token.getIsExcludedFromLimits(senderAddress);
+            
+            console.log(`Transaction Limit: ${limitsEnabled ? formatTokenAmount(transactionLimit, metadata.decimals, metadata.symbol) : 'Disabled'}`);
+            console.log(`Address Exclusions: ${isExcluded ? '✅ Excluded' : '❌ Not Excluded'}`);
+        } catch (error) {
+            console.log('Transaction Limit: Error retrieving limit info');
+            console.log('Address Exclusions: Error retrieving exclusion info');
+        }
 
         console.log('\n🔥 Burn Operations Overview:');
         console.log('='.repeat(40));
@@ -60,33 +65,46 @@ export async function run(provider: NetworkProvider) {
             { name: 'Small Burn', amount: toNano('100'), description: 'Minimal token burn' },
             { name: 'Medium Burn', amount: toNano('1000'), description: 'Moderate token burn' },
             { name: 'Large Burn', amount: toNano('10000'), description: 'Significant token burn' },
-            { name: 'Max Limit Burn', amount: transactionLimit, description: 'Maximum allowed burn (if not excluded)' }
+            { name: 'Very Large Burn', amount: toNano('100000'), description: 'Major token burn' }
         ];
 
         for (const scenario of burnScenarios) {
-            const amountFormatted = (Number(scenario.amount) / 1e9).toFixed(0);
-            const withinLimit = isExcluded || scenario.amount <= transactionLimit;
+            const amountFormatted = formatTokenAmount(scenario.amount, metadata.decimals);
             
             console.log(`\n${scenario.name}:`);
-            console.log(`  Amount: ${amountFormatted} ${symbol}`);
+            console.log(`  Amount: ${amountFormatted} ${metadata.symbol}`);
             console.log(`  Description: ${scenario.description}`);
-            console.log(`  Allowed: ${withinLimit ? '✅ Yes' : '❌ Exceeds Limit'}`);
+            
+            // Check if this amount would be allowed based on transaction limits
+            try {
+                const transactionLimit = await token.getGetMaxTxAmount();
+                const limitsEnabled = await token.getGetLimitsEnabled();
+                const isExcluded = await token.getIsExcludedFromLimits(senderAddress);
+                
+                const allowed = !limitsEnabled || isExcluded || scenario.amount <= transactionLimit;
+                console.log(`  Allowed: ${allowed ? '✅ Yes' : '❌ No (exceeds transaction limit)'}`);
+            } catch (error) {
+                console.log(`  Allowed: ⚠️ Unable to check limits`);
+            }
+            
             console.log(`  Impact: -${((Number(scenario.amount) / Number(jettonData.totalSupply)) * 100).toFixed(4)}% of total supply`);
         }
 
         // Example burn operation
         const burnAmount = toNano('500'); // 500 RTZ tokens
         console.log(`\n🔥 Example Burn Operation:`);
-        console.log(`Burn Amount: ${(Number(burnAmount) / 1e9).toFixed(0)} ${symbol}`);
-
-        // Check if burn amount is within limits
-        const canBurn = isExcluded || burnAmount <= transactionLimit;
-        console.log(`Within Limits: ${canBurn ? '✅ Yes' : '❌ No'}`);
-
-        if (!canBurn) {
-            console.log(`⚠️ Burn amount exceeds transaction limit!`);
-            console.log(`Limit: ${(Number(transactionLimit) / 1e9).toFixed(0)} ${symbol}`);
-            console.log(`Requested: ${(Number(burnAmount) / 1e9).toFixed(0)} ${symbol}`);
+        console.log(`Burn Amount: ${formatTokenAmount(burnAmount, metadata.decimals)} ${metadata.symbol}`);
+        
+        // Check if example burn is within limits
+        try {
+            const transactionLimit = await token.getGetMaxTxAmount();
+            const limitsEnabled = await token.getGetLimitsEnabled();
+            const isExcluded = await token.getIsExcludedFromLimits(senderAddress);
+            
+            const withinLimits = !limitsEnabled || isExcluded || burnAmount <= transactionLimit;
+            console.log(`Within Limits: ${withinLimits ? '✅ Yes' : '❌ No (exceeds transaction limit)'}`);
+        } catch (error) {
+            console.log(`Within Limits: ⚠️ Unable to check limits`);
         }
 
         // Calculate burn impact
@@ -94,10 +112,10 @@ export async function run(provider: NetworkProvider) {
         const newTotalSupply = Number(jettonData.totalSupply) - Number(burnAmount);
 
         console.log('\n📊 Burn Impact Analysis:');
-        console.log(`Current Total Supply: ${(Number(jettonData.totalSupply) / 1e9).toFixed(2)} ${symbol}`);
-        console.log(`Burn Amount: ${(Number(burnAmount) / 1e9).toFixed(2)} ${symbol}`);
+        console.log(`Current Total Supply: ${formatTokenAmount(jettonData.totalSupply, metadata.decimals)} ${metadata.symbol}`);
+        console.log(`Burn Amount: ${formatTokenAmount(burnAmount, metadata.decimals)} ${metadata.symbol}`);
         console.log(`Percentage of Supply: ${burnPercentage.toFixed(4)}%`);
-        console.log(`New Total Supply: ${(newTotalSupply / 1e9).toFixed(2)} ${symbol}`);
+        console.log(`New Total Supply: ${formatTokenAmount(BigInt(newTotalSupply), metadata.decimals)} ${metadata.symbol}`);
 
         // Note about wallet interaction
         console.log('\n⚠️ Important: Burn Operation Requirements');

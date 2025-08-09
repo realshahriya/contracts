@@ -1,5 +1,5 @@
 import { Address, toNano } from '@ton/core';
-import { Token } from '../wrappers/token';
+import { RezaToken } from '../wrappers/RezaToken';
 import { NetworkProvider } from '@ton/blueprint';
 import { getContractAddress, getDefaultGas, getOwnerAddress, validateConfig } from './config';
 
@@ -10,15 +10,14 @@ export async function run(provider: NetworkProvider) {
     // Validate configuration and get contract address
     validateConfig();
     const contractAddress = getContractAddress();
-    const token = provider.open(Token.fromAddress(contractAddress));
+    const token = provider.open(RezaToken.fromAddress(contractAddress));
 
     try {
         // Get current contract state
         console.log('\n📊 Current Contract State:');
         const jettonData = await token.getGetJettonData();
-        const symbol = await token.getGetSymbol();
-        console.log(`Token: ${await token.getGetName()} (${symbol})`);
-        console.log(`Total Supply: ${(Number(jettonData.totalSupply) / 1e9).toFixed(2)} ${symbol}`);
+        console.log(`Token: RezaToken (RTZ)`);
+        console.log(`Total Supply: ${(Number(jettonData.totalSupply) / 1e9).toFixed(2)} RTZ`);
         console.log(`Owner: ${jettonData.owner.toString()}`);
 
         // Mint parameters

@@ -1,30 +1,32 @@
 import { Address, toNano } from '@ton/core';
-import { Token } from '../wrappers/token';
+import { RezaToken } from '../wrappers/RezaToken';
 import { NetworkProvider } from '@ton/blueprint';
-import { getContractAddress, getDefaultGas, validateConfig, debugLog } from './config';
+import { extractMetadata, formatTokenAmount } from '../utils/metadata-helpers';
+import { getContractAddress, validateConfig } from './config';
 
 export async function run(provider: NetworkProvider) {
-    console.log('👑 Owner Transfer Script');
+    console.log('👑 Transfer Ownership - RTZ Token');
     console.log('='.repeat(50));
 
-    // Validate configuration and get contract address from environment
+    // Validate configuration and get contract address
     validateConfig();
     const contractAddress = getContractAddress();
-    const token = provider.open(Token.fromAddress(contractAddress));
+    const token = provider.open(RezaToken.fromAddress(contractAddress));
 
     try {
-        // Get current contract state
-        console.log('\n📊 Current Contract State:');
+        // Get current contract information
         const jettonData = await token.getGetJettonData();
-        const currentOwner = await token.getOwner();
-        const symbol = await token.getGetSymbol();
-        const name = await token.getGetName();
+        const metadata = extractMetadata(jettonData.content);
+
+        console.log('\n📊 Current Contract Information:');
+        console.log('Contract Address:', contractAddress.toString());
+        console.log('Token Name:', metadata.name);
+        console.log('Token Symbol:', metadata.symbol);
+        console.log('Current Owner:', jettonData.owner.toString());
+        console.log('Total Supply:', formatTokenAmount(jettonData.totalSupply, metadata.decimals, metadata.symbol));
+        console.log('Mintable:', jettonData.mintable ? '✅ Yes' : '❌ No');
         
-        console.log(`Token: ${name} (${symbol})`);
-        console.log(`Contract: ${contractAddress.toString()}`);
-        console.log(`Current Owner: ${currentOwner.toString()}`);
-        console.log(`Total Supply: ${jettonData.totalSupply.toString()}`);
-        console.log(`Mintable: ${jettonData.mintable ? '✅ Yes' : '❌ No'}`);
+        const currentOwner = jettonData.owner;
 
         // Verify sender is current owner
         const senderAddress = provider.sender().address;
@@ -57,7 +59,7 @@ export async function run(provider: NetworkProvider) {
         });
 
         const question = (query: string): Promise<string> => {
-            return new Promise(resolve => rl.question(query, resolve));
+            return new Promise(resolve => rl.question(query, (answer: string) => resolve(answer)));
         };
 
         let newOwnerAddress: Address;
@@ -109,17 +111,13 @@ export async function run(provider: NetworkProvider) {
         console.log('\n🚀 Executing Ownership Transfer...');
         console.log(`Query ID: ${queryId}`);
         
-        debugLog('Sending ChangeOwner message', {
-            queryId: queryId.toString(),
-            newOwner: newOwnerAddress.toString(),
-            gas: getDefaultGas().toString()
-        });
+        console.log('Sending ChangeOwner message...');
 
         // Send ChangeOwner message
         const transferResult = await token.send(
             provider.sender(),
             { 
-                value: getDefaultGas(),
+                value: toNano('0.05'),
                 bounce: true 
             },
             {
@@ -139,7 +137,8 @@ export async function run(provider: NetworkProvider) {
         // Verify ownership transfer
         console.log('\n🔍 Verifying ownership transfer...');
         try {
-            const updatedOwner = await token.getOwner();
+            const updatedJettonData = await token.getGetJettonData();
+            const updatedOwner = updatedJettonData.owner;
             
             if (updatedOwner.equals(newOwnerAddress)) {
                 console.log('\n🎉 SUCCESS: Ownership transfer completed!');
@@ -190,7 +189,7 @@ export async function run(provider: NetworkProvider) {
                 console.log('Please ensure you enter a valid TON address.');
             } else if (error.message.includes('insufficient funds')) {
                 console.log('\n💡 Insufficient funds for transaction.');
-                console.log(`Required gas: ${getDefaultGas()} TON`);
+                console.log('Required gas: ~0.05 TON');
             }
         }
         
@@ -209,13 +208,13 @@ export async function transferOwnership(
     newOwnerAddress: Address
 ): Promise<boolean> {
     try {
-        const token = provider.open(Token.fromAddress(contractAddress));
+        const token = provider.open(RezaToken.fromAddress(contractAddress));
         const queryId = BigInt(Date.now());
         
         await token.send(
             provider.sender(),
             { 
-                value: getDefaultGas(),
+                value: toNano('0.05'),
                 bounce: true 
             },
             {
@@ -227,9 +226,9 @@ export async function transferOwnership(
         
         // Wait and verify
         await new Promise(resolve => setTimeout(resolve, 10000));
-        const updatedOwner = await token.getOwner();
+        const jettonData = await token.getGetJettonData();
         
-        return updatedOwner.equals(newOwnerAddress);
+        return jettonData.owner.equals(newOwnerAddress);
     } catch (error) {
         console.error('Transfer ownership error:', error);
         return false;

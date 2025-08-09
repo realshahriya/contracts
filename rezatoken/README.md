@@ -1,243 +1,189 @@
-# RezaToken (RTZ) - TON Jetton
+# RezaToken (RTZ) - DEX-Compatible Jetton
 
-A simple TON blockchain jetton implementation without any transfer restrictions.
+A fully compliant TEP-74 Jetton token designed specifically for seamless integration with TON blockchain decentralized exchanges (DEXs) like DeDust, STON.fi, and others.
 
-## Features
+## 🎯 Key Features
 
-### Core Jetton Features
+- **100% TEP-74 Compliant**: Follows the official Jetton standard exactly
+- **DEX-Ready**: Compatible with all major TON DEXs out of the box
+- **No Complex Logic**: Clean, simple implementation without unnecessary features that could break DEX compatibility
+- **Standard Gas Costs**: Optimized for minimal transaction fees
+- **Owner Controls**: Mint/burn capabilities with owner permissions
 
-- Standard TON jetton implementation
-- Mintable by owner
-- Maximum supply: 1,000,000 RTZ tokens
-- 9 decimal places
-- **Dynamic Transaction Limits**: Owner-controlled per-transaction limits
+## 🚀 Quick Start
 
-### Transaction Limit System
+### Prerequisites
 
-- **Daily Adjustable**: Owner can change transaction limits daily based on token demand
-- **Market Responsive**: Increase limits during high demand, decrease during volatility
-- **Address Exclusions**: Specific addresses can bypass all transaction limits
-- **Real-time Enforcement**: Limits are validated at transfer time
-
-### Address Exclusion System
-
-- **DEX Integration**: Add DEX addresses for unlimited trading
-- **Whale Management**: Exclude large holders for liquidity operations
-- **Partnership Support**: Exclude partner wallets for business operations
-- **Owner Control**: Only owner can add/remove excluded addresses
-- **Permanent Owner**: Owner address is always excluded and cannot be removed
-
-## 📁 Project Structure
-
-- `contracts` - source code of all the smart contracts of the project and their dependencies.
-- `wrappers` - wrapper classes (implementing `Contract` from ton-core) for the contracts, including any [de]serialization primitives and compilation functions.
-- `tests` - tests for the contracts.
-- `scripts` - scripts used by the project, mainly the deployment scripts.
-
-## Contract Structure
-
-### State Variables
-
-- `totalSupply`: Current token supply
-- `owner`: Contract owner address
-- `mintable`: Whether new tokens can be minted
-- `max_supply`: Maximum token supply (1,000,000 RTZ)
-- `transactionLimit`: Maximum tokens per transaction (dynamic)
-- `excludedAddresses`: Map of addresses excluded from transaction limits
-
-## Functions
-
-### Owner Functions
-
-- `Mint`: Mint new tokens (owner only)
-- `ChangeOwner`: Transfer ownership
-- `ChangeContent`: Update token metadata
-- `SetTransactionLimit`: Set maximum tokens per transaction (daily adjustable)
-- `AddExcludedAddress`: Add address to exclusion list (bypass limits)
-- `RemoveExcludedAddress`: Remove address from exclusion list
-
-### Standard Jetton Functions
-
-- `TokenTransfer`: Transfer tokens between wallets
-- `TokenBurn`: Burn tokens from wallet
-
-### Getter Functions
-
-- `get_jetton_data()`: Returns token metadata
-- `get_wallet_address(owner_address)`: Get wallet address for owner
-- `get_transaction_limit()`: Returns current transaction limit
-- `is_excluded_address(address)`: Check if address is excluded from limits
-
-## How It Works
-
-This jetton contract implements dynamic transaction limits that can be adjusted by the owner based on market conditions and token demand. The system validates each transfer against the current limit while exempting the contract owner.
-
-### Transaction Limit Management
-
-```typescript
-// Set transaction limit to 1,000 RTZ tokens
-await token.send(provider.sender(), {
-    value: toNano('0.05'),
-}, {
-    $$type: 'SetTransactionLimit',
-    limit: toNano('1000') // 1,000 RTZ tokens
-});
-
-// Check current limit
-const currentLimit = await token.getGetTransactionLimit();
-console.log(`Current limit: ${Number(currentLimit) / 1e9} RTZ tokens`);
+```bash
+npm install
 ```
 
-### Address Exclusion Management
-
-```typescript
-// Add DEX address to exclusion list
-const dexAddress = Address.parse("EQBYTuYbLf8INxFtD8tQeNk5ZLy-nAX9ahQbG_yl1qQ-GEMS");
-await token.send(provider.sender(), {
-    value: toNano('0.05'),
-}, {
-    $$type: 'AddExcludedAddress',
-    address: dexAddress
-});
-
-// Check if address is excluded
-const isExcluded = await token.getIsExcludedAddress(dexAddress);
-console.log(`DEX excluded: ${isExcluded}`);
-
-// Remove address from exclusion list
-await token.send(provider.sender(), {
-    value: toNano('0.05'),
-}, {
-    $$type: 'RemoveExcludedAddress',
-    address: dexAddress
-});
-```
-
-### Use Cases
-
-- **Market Volatility**: Reduce limits during high volatility to prevent large dumps
-- **High Demand**: Increase limits during bull markets to allow larger transactions
-- **Token Launch**: Start with conservative limits, gradually increase as market matures
-- **Community Events**: Temporarily adjust limits for special occasions or airdrops
-- **DEX Integration**: Exclude DEX router/pool addresses for unlimited trading
-- **Whale Management**: Exclude large holders for liquidity operations
-- **Partnership**: Exclude partner wallets for business operations
-- **Treasury Operations**: Exclude treasury wallets for large fund movements
-
-### For All Users
-
-- **Limited transfers**: Transfers are subject to current transaction limits
-- **Dynamic limits**: Transaction limits can change daily based on market conditions
-- **Address exclusions**: Some addresses can bypass all transaction limits
-- **Real-time validation**: Limits are checked during each transfer
-
-### For Owner
-
-- Can mint new tokens (up to max supply)
-- Can transfer ownership
-- Can update token metadata
-- Can adjust transaction limits daily
-- Can add/remove addresses from exclusion list
-- Always excluded from transaction limits (cannot be removed)
-
-## Usage Examples
-
-### Deploy Contract
+### 1. Deploy Token
 
 ```bash
 npx blueprint run deploytoken
 ```
 
-### Mint Tokens
+This will deploy your RezaToken contract and show you the contract address.
+
+### 2. Mint Initial Supply
 
 ```bash
-npx blueprint run mint
+npx blueprint run mint-tokens
 ```
 
-### Test Transaction Limits
+This will mint 1,000,000 RTZ tokens to your wallet.
 
-```bash
-npx blueprint run transaction-limits
-```
+### 3. Add to DEX
 
-**Address Exclusions Management:**
+Your token is now ready to be added to any TON DEX! 
 
-```bash
-npx blueprint run address-exclusions
-```
+## 🔧 Configuration
 
-### Check Contract State
+Edit `scripts/config.ts` to customize:
 
-```bash
-npx blueprint run check-contract-state
-```
+- Contract address (after deployment)
+- Owner address
+- Gas fees
+- Mint amounts
 
-## Configuration
-
-The contract is initialized with:
-
-- Maximum supply: 1,000,000 RTZ tokens
-- Owner: Deployer address
-- Mintable: true
-- No transfer restrictions
-
-## Security Features
-
-- Only owner can mint tokens
-- Only owner can change ownership
-- Only owner can update metadata
-- Maximum supply limit prevents infinite minting
-
-## 🛠️ Development Commands
-
-### Build
-
-```bash
-npx blueprint build
-```
-
-### Test
-
-```bash
-npx blueprint test
-```
-
-### Deploy or run scripts
-
-```bash
-npx blueprint run
-```
-
-### Add a new contract
-
-```bash
-npx blueprint create ContractName
-```
-
-## 📊 Token Information
+## 📊 Token Details
 
 - **Name**: RezaToken
 - **Symbol**: RTZ
 - **Decimals**: 9
-- **Total Supply**: 1,000,000 RTZ
-- **Sell Limit**: $1 (configurable by owner)
+- **Max Supply**: 1,000,000,000 RTZ
+- **Initial Supply**: 0 (mint as needed)
 
-## 🔧 Owner Functions
+## 🏪 DEX Integration
 
-- `SetSellLimit`: Update the maximum sell amount
-- `SetTokenPrice`: Update token price in USD (automatically adjusts sell limit)
-- `ApproveSeller`: Approve addresses for unlimited selling
-- `ApproveDexAddress`: Approve/unapprove DEX addresses for unlimited transactions
-- `AddDexAddress`: Register DEX addresses for restriction enforcement
-- `RemoveDexAddress`: Remove DEX addresses from registry
-- Standard Jetton owner functions (mint, pause, etc.)
+### DeDust.io
 
-## 🌐 Network Support
+1. Go to [DeDust.io](https://dedust.io)
+2. Connect your wallet
+3. Navigate to "Create Pool"
+4. Enter your token contract address
+5. Add TON/RTZ liquidity pair
 
-- ✅ TON Testnet
-- ✅ TON Mainnet
-- ✅ Local TON development environment
+### STON.fi
+
+1. Visit [STON.fi](https://ston.fi)
+2. Connect wallet
+3. Go to "Pools" → "Create Pool"
+4. Add your RTZ token address
+5. Create TON/RTZ pair
+
+### Other DEXs
+
+This token follows the standard TEP-74 specification, so it will work with any compliant DEX on TON.
+
+## 🛠 Available Scripts
+
+- `deploytoken` - Deploy the token contract
+- `mint-tokens` - Mint tokens to specified address
+- `check-contract-state` - View current token state
+- `get-all-data` - Get comprehensive token information
+
+## 📋 Contract Interface
+
+### Standard Jetton Methods
+
+```typescript
+// Get token metadata
+get_jetton_data(): JettonData
+
+// Get wallet address for owner
+get_wallet_address(owner: Address): Address
+```
+
+### Owner-Only Operations
+
+```typescript
+// Mint tokens
+Mint { amount: Int, receiver: Address }
+
+// Close/open minting
+"Owner: MintClose"
+"Owner: MintOpen"
+```
+
+## 🔒 Security Features
+
+- Owner-only minting controls
+- Standard burn functionality
+- Bounce handling for failed transfers
+- Gas optimization for all operations
+
+## 🧪 Testing
+
+```bash
+npm test
+```
+
+Runs comprehensive tests including:
+- Token deployment
+- Minting operations
+- Transfer functionality
+- DEX compatibility checks
+
+## 📁 Project Structure
+
+```
+rezatoken/
+├── contracts/
+│   └── token.tact          # Main token contract
+├── scripts/
+│   ├── deploytoken.ts      # Deployment script
+│   ├── mint-tokens.ts      # Minting script
+│   └── config.ts           # Configuration
+├── wrappers/
+│   └── RezaToken.ts        # TypeScript wrapper
+└── tests/                  # Test files
+```
+
+## 🤝 Why This Token Works with DEXs
+
+Unlike complex tokens with custom logic, this implementation:
+
+1. **Follows TEP-74 exactly** - No custom message types that confuse DEXs
+2. **Standard gas costs** - Predictable fees for DEX smart contracts
+3. **Clean transfers** - No transaction limits or complex validation
+4. **Proper bouncing** - Handles failed transactions correctly
+5. **Standard metadata** - DEXs can read token info properly
+
+## 🆘 Troubleshooting
+
+### Token not showing in DEX?
+
+1. Verify contract is deployed: Check on [TONScan](https://tonscan.org)
+2. Ensure you have minted tokens
+3. Check if DEX supports your token (some have whitelists)
+
+### Transfers failing?
+
+1. Check wallet has sufficient TON for gas
+2. Verify recipient address is correct
+3. Ensure token balance is sufficient
+
+### Can't add liquidity?
+
+1. Make sure you have both TON and RTZ in your wallet
+2. Check if the DEX requires minimum liquidity amounts
+3. Verify token contract address is correct
+
+## 📞 Support
+
+If you encounter issues:
+
+1. Check the troubleshooting section above
+2. Verify your token follows TEP-74 standard
+3. Test transfers manually before adding to DEX
+4. Ensure sufficient gas for all operations
 
 ## 📄 License
 
-This project is licensed under the MIT License.
+MIT License - feel free to use and modify as needed.
+
+---
+
+**Ready to trade!** 🚀 Your RezaToken is now fully compatible with TON DEXs.

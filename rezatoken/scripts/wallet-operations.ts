@@ -1,7 +1,8 @@
 import { Address, toNano, beginCell } from '@ton/core';
-import { Token } from '../wrappers/token';
+import { RezaToken } from '../wrappers/RezaToken';
 import { NetworkProvider } from '@ton/blueprint';
 import { getContractAddress, getOwnerAddress, validateConfig } from './config';
+import { extractMetadata, formatTokenAmount } from '../utils/metadata-helpers';
 
 export async function run(provider: NetworkProvider) {
     console.log('💳 Wallet Operations Script');
@@ -10,15 +11,15 @@ export async function run(provider: NetworkProvider) {
     // Validate configuration and get contract address
     validateConfig();
     const contractAddress = getContractAddress();
-    const token = provider.open(Token.fromAddress(contractAddress));
+    const token = provider.open(RezaToken.fromAddress(contractAddress));
 
     try {
         // Get current contract state
         console.log('\n📊 Contract Information:');
         const jettonData = await token.getGetJettonData();
-        const symbol = await token.getGetSymbol();
-        console.log(`Token: ${await token.getGetName()} (${symbol})`);
-        console.log(`Total Supply: ${(Number(jettonData.totalSupply) / 1e9).toFixed(2)} ${symbol}`);
+        const metadata = extractMetadata(jettonData.content);
+        console.log(`Token: ${metadata.name} (${metadata.symbol})`);
+        console.log(`Total Supply: ${formatTokenAmount(jettonData.totalSupply, metadata.decimals, metadata.symbol)}`);
         console.log(`Owner: ${jettonData.owner.toString()}`);
 
         // Get sender information
@@ -35,13 +36,18 @@ export async function run(provider: NetworkProvider) {
         const senderWallet = await token.getGetWalletAddress(senderAddress);
         console.log(`Sender Wallet: ${senderWallet.toString()}`);
 
-        // Check if sender is excluded from transaction limits
-        const isExcluded = await token.getIsExcludedAddress(senderAddress);
-        console.log(`Excluded from Limits: ${isExcluded}`);
-
-        // Get current transaction limit
-        const transactionLimit = await token.getGetTransactionLimit();
-        console.log(`Transaction Limit: ${(Number(transactionLimit) / 1e9).toFixed(2)} ${symbol}`);
+        // Check transaction limits and exclusions
+        try {
+            const transactionLimit = await token.getGetMaxTxAmount();
+            const limitsEnabled = await token.getGetLimitsEnabled();
+            const isExcluded = await token.getIsExcludedFromLimits(senderAddress);
+            
+            console.log(`Transaction Limit: ${limitsEnabled ? formatTokenAmount(transactionLimit, metadata.decimals, metadata.symbol) : 'Disabled'}`);
+            console.log(`Excluded from Limits: ${isExcluded ? '✅ Yes' : '❌ No'}`);
+        } catch (error) {
+            console.log('Transaction Limit: Error retrieving limit info');
+            console.log('Excluded from Limits: Error retrieving exclusion info');
+        }
 
         console.log('\n💳 Wallet Operations Available:');
         console.log('='.repeat(40));
@@ -62,19 +68,11 @@ export async function run(provider: NetworkProvider) {
         const queryId = BigInt(Math.floor(Date.now() / 1000));
 
         console.log('\n📋 Transfer Parameters:');
-        console.log(`Amount: ${(Number(transferAmount) / 1e9).toFixed(2)} ${symbol}`);
+        console.log(`Amount: ${(Number(transferAmount) / 1e9).toFixed(2)} ${metadata.symbol}`);
         console.log(`Forward Amount: ${(Number(forwardAmount) / 1e9).toFixed(9)} TON`);
         console.log(`Query ID: ${queryId}`);
 
-        // Check transaction limit compliance
-        if (!isExcluded && transferAmount > transactionLimit) {
-            console.log('\n⚠️ Transfer Amount Exceeds Limit!');
-            console.log(`Transfer: ${(Number(transferAmount) / 1e9).toFixed(2)} ${symbol}`);
-            console.log(`Limit: ${(Number(transactionLimit) / 1e9).toFixed(2)} ${symbol}`);
-            console.log('Transfer would be rejected by the contract');
-        } else {
-            console.log('\n✅ Transfer Amount Within Limits');
-        }
+        console.log('\n✅ Transfer (Subject to Transaction Limits)');
 
         console.log('\n🔧 Wallet Contract Information:');
         console.log('• Wallet contracts handle token transfers');
@@ -106,10 +104,14 @@ export async function run(provider: NetworkProvider) {
             try {
                 const address = Address.parse(addr);
                 const walletAddr = await token.getGetWalletAddress(address);
-                const excluded = await token.getIsExcludedAddress(address);
                 console.log(`${addr.slice(0, 10)}...${addr.slice(-6)}:`);
                 console.log(`  Wallet: ${walletAddr.toString()}`);
-                console.log(`  Excluded: ${excluded}`);
+                try {
+                    const isExcluded = await token.getIsExcludedFromLimits(address);
+                    console.log(`  Excluded: ${isExcluded ? '✅ Yes' : '❌ No'}`);
+                } catch (e) {
+                    console.log(`  Excluded: Error checking exclusion status`);
+                }
             } catch (e) {
                 console.log(`${addr}: Error getting wallet info`);
             }

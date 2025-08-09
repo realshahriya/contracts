@@ -1,31 +1,30 @@
-import { Address, toNano, beginCell, Cell } from '@ton/core';
-import { Token } from '../wrappers/token';
+import { Address, toNano } from '@ton/core';
+import { RezaToken } from '../wrappers/RezaToken';
 import { NetworkProvider } from '@ton/blueprint';
 import { buildOnchainMetadata } from '../utils/jetton-helpers';
-import { getContractAddress, getDefaultGas, validateConfig, debugLog } from './config';
+import { extractMetadata, formatTokenAmount } from '../utils/metadata-helpers';
 
 export async function run(provider: NetworkProvider) {
-    console.log('📝 Content Management Script');
+    console.log('📝 Content Management Script - RTZ Token');
     console.log('='.repeat(50));
 
-    // Validate configuration and get contract address from environment
-    validateConfig();
-    const contractAddress = getContractAddress();
-    const token = provider.open(Token.fromAddress(contractAddress));
+    // Get contract address from environment or use default
+    const contractAddressStr = process.env.CONTRACT_ADDRESS || "kQCr3sfrMtkAHdzWGXvYg3qJNrfNcZQ8UHSeNCE6Er8Q-KbS";
+    const contractAddress = Address.parse(contractAddressStr);
+    const token = provider.open(RezaToken.fromAddress(contractAddress));
 
     try {
         // Get current contract state
         console.log('\n📊 Current Contract State:');
         const jettonData = await token.getGetJettonData();
-        const symbol = await token.getGetSymbol();
-        const name = await token.getGetName();
-        const decimals = Number(await token.getGetDecimals()); // Convert bigint to number
-        const content = await token.getGetContent();
         
-        console.log(`Token: ${name} (${symbol})`);
-        console.log(`Decimals: ${decimals}`);
+        // Extract metadata from content
+        const metadata = extractMetadata(jettonData.content);
+        
+        console.log(`Token: ${metadata.name} (${metadata.symbol})`);
+        console.log(`Decimals: ${metadata.decimals}`);
         console.log(`Owner: ${jettonData.owner.toString()}`);
-        console.log(`Total Supply: ${(Number(jettonData.totalSupply) / 1e9).toFixed(2)} ${symbol}`);
+        console.log(`Total Supply: ${formatTokenAmount(jettonData.totalSupply, metadata.decimals, metadata.symbol)}`);
 
         // Check if sender is the owner
         const senderAddress = provider.sender().address;
@@ -49,12 +48,12 @@ export async function run(provider: NetworkProvider) {
         
         try {
             // Parse content cell to extract metadata
-            console.log('Content Cell Hash:', content.hash().toString('hex'));
-            console.log('Content Cell Bits:', content.bits.length);
-            console.log('Content Cell Refs:', content.refs.length);
+            console.log('Content Cell Hash:', jettonData.content.hash().toString('hex'));
+            console.log('Content Cell Bits:', jettonData.content.bits.length);
+            console.log('Content Cell Refs:', jettonData.content.refs.length);
             
             // Try to parse as onchain metadata
-            const slice = content.beginParse();
+            const slice = jettonData.content.beginParse();
             if (slice.remainingBits >= 8) {
                 const prefix = slice.loadUint(8);
                 console.log(`Content Prefix: 0x${prefix.toString(16)}`);
@@ -77,10 +76,10 @@ export async function run(provider: NetworkProvider) {
 
         // Scenario 1: Update description
         const updatedMetadata1 = {
-            name: name,
-            symbol: symbol,
+            name: metadata.name,
+            symbol: metadata.symbol,
             description: "Updated RezaToken - A secure and feature-rich Jetton with transaction limits and address exclusions",
-            decimals: decimals,
+            decimals: metadata.decimals,
             image: "https://example.com/rezatoken-logo.png"
         };
 
@@ -89,10 +88,10 @@ export async function run(provider: NetworkProvider) {
 
         // Scenario 2: Add social links
         const updatedMetadata2 = {
-            name: name,
-            symbol: symbol,
+            name: metadata.name,
+            symbol: metadata.symbol,
             description: "RezaToken - Advanced Jetton Implementation",
-            decimals: decimals,
+            decimals: metadata.decimals,
             image: "https://example.com/rezatoken-logo.png",
             website: "https://rezatoken.com",
             telegram: "https://t.me/rezatoken",
@@ -106,10 +105,10 @@ export async function run(provider: NetworkProvider) {
 
         // Scenario 3: Update image
         const updatedMetadata3 = {
-            name: name,
-            symbol: symbol,
+            name: metadata.name,
+            symbol: metadata.symbol,
             description: "RezaToken - Advanced Jetton Implementation",
-            decimals: decimals,
+            decimals: metadata.decimals,
             image: "https://cdn.rezatoken.com/logo-v2.png"
         };
 
@@ -130,7 +129,7 @@ export async function run(provider: NetworkProvider) {
             const result = await token.send(
                 provider.sender(),
                 {
-                    value: getDefaultGas(), // Gas fee from environment
+                    value: toNano('0.05'), // Gas fee
                 },
                 {
                     $$type: 'TokenUpdateContent',
@@ -145,7 +144,8 @@ export async function run(provider: NetworkProvider) {
             await new Promise(resolve => setTimeout(resolve, 10000));
 
             // Check updated content
-            const updatedContent = await token.getGetContent();
+            const updatedJettonData = await token.getGetJettonData();
+            const updatedContent = updatedJettonData.content;
             console.log('\n📊 Updated Content:');
             console.log('New Hash:', updatedContent.hash().toString('hex'));
             
@@ -155,15 +155,10 @@ export async function run(provider: NetworkProvider) {
                 console.log('⚠️ Content may still be updating...');
             }
 
-            // Verify updated metadata
-            const updatedName = await token.getGetName();
-            const updatedSymbol = await token.getGetSymbol();
-            const updatedDecimals = await token.getGetDecimals();
-
-            console.log('\n📋 Verified Updated Metadata:');
-            console.log(`Name: ${updatedName}`);
-            console.log(`Symbol: ${updatedSymbol}`);
-            console.log(`Decimals: ${updatedDecimals}`);
+            console.log('\n📋 Verified Updated Contract State:');
+            console.log(`Total Supply: ${formatTokenAmount(updatedJettonData.totalSupply, metadata.decimals, metadata.symbol)}`);
+            console.log(`Mintable: ${updatedJettonData.mintable}`);
+            console.log(`Owner: ${updatedJettonData.owner.toString()}`);
 
         } else {
             console.log('\n🔒 Owner-only operation - simulation mode');

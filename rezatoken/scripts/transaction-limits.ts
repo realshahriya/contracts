@@ -1,27 +1,37 @@
 import { Address, toNano } from '@ton/core';
-import { Token } from '../wrappers/token';
+import { RezaToken } from '../wrappers/RezaToken';
 import { NetworkProvider } from '@ton/blueprint';
-import { getContractAddress, getDefaultGas, validateConfig } from './config';
+import { extractMetadata, formatTokenAmount } from '../utils/metadata-helpers';
+import { getContractAddress, validateConfig, getDefaultGas, getOwnerAddress } from './config';
 
 export async function run(provider: NetworkProvider) {
-    console.log('⚖️ Transaction Limits Management Script');
+    console.log('⚖️ Transaction Limits Management - RTZ Token');
     console.log('='.repeat(50));
 
     // Validate configuration and get contract address
     validateConfig();
     const contractAddress = getContractAddress();
-    const token = provider.open(Token.fromAddress(contractAddress));
+    const token = provider.open(RezaToken.fromAddress(contractAddress));
 
     try {
         // Get current contract state
         console.log('\n📊 Current Contract State:');
         const jettonData = await token.getGetJettonData();
-        const symbol = await token.getGetSymbol();
-        const currentLimit = await token.getGetTransactionLimit();
+        const metadata = extractMetadata(jettonData.content);
         
-        console.log(`Token: ${await token.getGetName()} (${symbol})`);
+        console.log(`Token: ${metadata.name} (${metadata.symbol})`);
         console.log(`Owner: ${jettonData.owner.toString()}`);
-        console.log(`Current Transaction Limit: ${(Number(currentLimit) / 1e9).toFixed(2)} ${symbol}`);
+        
+        // Get current transaction limits
+        try {
+            const currentLimit = await token.getGetMaxTxAmount();
+            const limitsEnabled = await token.getGetLimitsEnabled();
+            
+            console.log(`Transaction Limit: ${formatTokenAmount(currentLimit, metadata.decimals, metadata.symbol)}`);
+            console.log(`Limits Enabled: ${limitsEnabled ? '✅ Yes' : '❌ No'}`);
+        } catch (error) {
+            console.log('Transaction Limits: ⚠️ Could not retrieve current limits');
+        }
 
         // Check if sender is the owner
         const senderAddress = provider.sender().address;
@@ -36,125 +46,53 @@ export async function run(provider: NetworkProvider) {
 
         if (!isOwner) {
             console.log('\n⚠️ Only the contract owner can modify transaction limits');
-            console.log('This script will demonstrate the process but cannot execute changes');
+            console.log('You can still view current limits and settings');
         }
 
-        // Demonstrate different limit scenarios
-        console.log('\n🎯 Transaction Limit Scenarios:');
-        console.log('='.repeat(40));
-
-        const limitScenarios = [
-            { name: 'Conservative', amount: toNano('1000'), description: 'Low limit for security' },
-            { name: 'Moderate', amount: toNano('10000'), description: 'Balanced limit for normal use' },
-            { name: 'Liberal', amount: toNano('100000'), description: 'High limit for power users' },
-            { name: 'No Limit', amount: toNano('1000000000'), description: 'Effectively unlimited' }
-        ];
-
-        for (const scenario of limitScenarios) {
-            console.log(`\n${scenario.name} Limit:`);
-            console.log(`  Amount: ${(Number(scenario.amount) / 1e9).toFixed(0)} ${symbol}`);
-            console.log(`  Description: ${scenario.description}`);
-            console.log(`  Current: ${scenario.amount === currentLimit ? '✅ Active' : '⚪ Inactive'}`);
-        }
-
-        // Example: Set new transaction limit
-        const newLimit = toNano('50000'); // 50,000 RTZ tokens
-        console.log(`\n🔧 Setting New Transaction Limit:`);
-        console.log(`New Limit: ${(Number(newLimit) / 1e9).toFixed(0)} ${symbol}`);
-
+        // Interactive menu for transaction limits management
         if (isOwner) {
-            console.log('\n📤 Sending SetTransactionLimit message...');
-            
-            const result = await token.send(
-                provider.sender(),
-                {
-                    value: getDefaultGas(), // Gas fee from config
-                },
-                {
-                    $$type: 'SetTransactionLimit',
-                    limit: newLimit
-                }
-            );
+            console.log('\n🎯 Transaction Limits Management Options:');
+            console.log('='.repeat(40));
+            console.log('1. Set new transaction limit');
+            console.log('2. Enable/disable limits');
+            console.log('3. View current settings');
+            console.log('4. Set address exclusions');
+            console.log('5. Exit');
 
-            console.log('✅ Transaction sent');
+            const readline = require('readline').createInterface({
+                input: process.stdin,
+                output: process.stdout
+            });
 
-            // Wait a bit for the transaction to be processed
-            console.log('\n⏳ Waiting for transaction confirmation...');
-            await new Promise(resolve => setTimeout(resolve, 10000));
+            const option = await new Promise<string>((resolve) => {
+                readline.question('\n🔢 Select option (1-5): ', resolve);
+            });
 
-            // Check updated limit
-            const updatedLimit = await token.getGetTransactionLimit();
-            console.log(`\n📊 Updated Transaction Limit: ${(Number(updatedLimit) / 1e9).toFixed(2)} ${symbol}`);
-            
-            if (updatedLimit === newLimit) {
-                console.log('✅ Transaction limit updated successfully!');
-            } else {
-                console.log('⚠️ Transaction limit may still be updating...');
+            switch (option) {
+                case '1':
+                    await setTransactionLimit(provider, token, readline, metadata);
+                    break;
+                case '2':
+                    await toggleLimitsEnabled(provider, token, readline);
+                    break;
+                case '3':
+                    await viewCurrentSettings(token, metadata);
+                    break;
+                case '4':
+                    await manageAddressExclusions(provider, token, readline);
+                    break;
+                case '5':
+                    console.log('👋 Goodbye!');
+                    break;
+                default:
+                    console.log('❌ Invalid option selected');
             }
+
+            readline.close();
         } else {
-            console.log('\n🔒 Owner-only operation - simulation mode');
-            console.log('Message structure that would be sent:');
-            console.log(JSON.stringify({
-                $$type: 'SetTransactionLimit',
-                limit: newLimit.toString()
-            }, null, 2));
+            // Non-owner can only view settings
+            await viewCurrentSettings(token, metadata);
         }
-
-        // Check transaction limit for various addresses
-        console.log('\n🔍 Address Limit Compliance Check:');
-        console.log('='.repeat(40));
-
-        const testAddresses = [
-            jettonData.owner.toString(),
-            "EQBvW8Z5huBkMJYdnfAEM5JqTNkuWX3diqYENkWsIL0XggGG",
-            senderAddress.toString()
-        ];
-
-        for (const addr of testAddresses) {
-            try {
-                const address = Address.parse(addr);
-                const isExcluded = await token.getIsExcludedAddress(address);
-                const walletAddr = await token.getGetWalletAddress(address);
-                
-                console.log(`\n📍 ${addr.slice(0, 10)}...${addr.slice(-6)}:`);
-                console.log(`  Wallet: ${walletAddr.toString().slice(0, 10)}...${walletAddr.toString().slice(-6)}`);
-                console.log(`  Excluded from Limits: ${isExcluded ? '✅ Yes' : '❌ No'}`);
-                console.log(`  Max Transfer: ${isExcluded ? 'Unlimited' : `${(Number(currentLimit) / 1e9).toFixed(0)} ${symbol}`}`);
-            } catch (e) {
-                console.log(`${addr}: Error checking address`);
-            }
-        }
-
-        // Demonstrate limit checking
-        console.log('\n🧮 Transfer Amount Validation:');
-        console.log('='.repeat(40));
-
-        const testAmounts = [
-            toNano('100'),
-            toNano('1000'),
-            toNano('10000'),
-            toNano('100000')
-        ];
-
-        for (const amount of testAmounts) {
-            const amountFormatted = (Number(amount) / 1e9).toFixed(0);
-            const withinLimit = amount <= currentLimit;
-            console.log(`${amountFormatted} ${symbol}: ${withinLimit ? '✅ Allowed' : '❌ Exceeds Limit'}`);
-        }
-
-        console.log('\n💡 Transaction Limit Best Practices:');
-        console.log('• Set limits based on token economics');
-        console.log('• Consider user experience vs security');
-        console.log('• Use address exclusions for trusted parties');
-        console.log('• Monitor and adjust limits as needed');
-        console.log('• Document limit changes for transparency');
-
-        console.log('\n⚠️ Important Notes:');
-        console.log('• Only contract owner can modify limits');
-        console.log('• Excluded addresses bypass all limits');
-        console.log('• Limits apply to individual transfers');
-        console.log('• Changes take effect immediately');
-        console.log('• Gas fee required for limit updates');
 
     } catch (error) {
         console.error('❌ Error in transaction limits management:', error);
@@ -163,5 +101,178 @@ export async function run(provider: NetworkProvider) {
         console.log('• Check contract address is correct');
         console.log('• Ensure sufficient gas for transactions');
         console.log('• Verify network connectivity');
+    }
+}
+
+async function setTransactionLimit(provider: NetworkProvider, token: any, readline: any, metadata: any) {
+    console.log('\n🔧 Set New Transaction Limit');
+    console.log('='.repeat(30));
+
+    const limitInput = await new Promise<string>((resolve) => {
+        readline.question(`Enter new transaction limit (in ${metadata.symbol}): `, resolve);
+    });
+
+    const limitAmount = parseFloat(limitInput);
+    if (isNaN(limitAmount) || limitAmount <= 0) {
+        console.log('❌ Invalid limit amount');
+        return;
+    }
+
+    const limitInNano = BigInt(Math.floor(limitAmount * Math.pow(10, metadata.decimals)));
+
+    console.log(`\n📋 New Limit Details:`);
+    console.log(`Amount: ${limitAmount} ${metadata.symbol}`);
+    console.log(`Amount (nano): ${limitInNano.toString()}`);
+
+    const confirm = await new Promise<string>((resolve) => {
+        readline.question('\n❓ Confirm setting new limit? (yes/no): ', resolve);
+    });
+
+    if (confirm.toLowerCase() !== 'yes') {
+        console.log('❌ Operation cancelled');
+        return;
+    }
+
+    try {
+        console.log('\n🚀 Setting new transaction limit...');
+        await token.send(
+            provider.sender(),
+            { value: getDefaultGas() },
+            {
+                $$type: 'SetTransactionLimit',
+                maxTxAmount: limitInNano,
+                maxWalletAmount: limitInNano
+            }
+        );
+
+        console.log('✅ Transaction limit update sent successfully!');
+        console.log('⏳ Please wait for transaction confirmation...');
+    } catch (error) {
+        console.error('❌ Error setting transaction limit:', error);
+    }
+}
+
+async function toggleLimitsEnabled(provider: NetworkProvider, token: any, readline: any) {
+    console.log('\n🔄 Toggle Limits Enabled/Disabled');
+    console.log('='.repeat(30));
+
+    try {
+        const currentStatus = await token.getGetLimitsEnabled();
+        console.log(`Current Status: ${currentStatus ? 'Enabled' : 'Disabled'}`);
+        
+        const newStatus = !currentStatus;
+        console.log(`New Status: ${newStatus ? 'Enabled' : 'Disabled'}`);
+
+        const confirm = await new Promise<string>((resolve) => {
+            readline.question(`\n❓ ${newStatus ? 'Enable' : 'Disable'} transaction limits? (yes/no): `, resolve);
+        });
+
+        if (confirm.toLowerCase() !== 'yes') {
+            console.log('❌ Operation cancelled');
+            return;
+        }
+
+        console.log(`\n🚀 ${newStatus ? 'Enabling' : 'Disabling'} transaction limits...`);
+        await token.send(
+            provider.sender(),
+            { value: getDefaultGas() },
+            {
+                $$type: 'SetLimitsEnabled',
+                enabled: newStatus
+            }
+        );
+
+        console.log('✅ Limits status update sent successfully!');
+        console.log('⏳ Please wait for transaction confirmation...');
+    } catch (error) {
+        console.error('❌ Error toggling limits:', error);
+    }
+}
+
+async function viewCurrentSettings(token: any, metadata: any) {
+    console.log('\n📊 Current Transaction Limit Settings');
+    console.log('='.repeat(40));
+
+    try {
+        const currentLimit = await token.getGetMaxTxAmount();
+        const limitsEnabled = await token.getGetLimitsEnabled();
+
+        console.log(`Transaction Limit: ${formatTokenAmount(currentLimit, metadata.decimals, metadata.symbol)}`);
+        console.log(`Limits Enabled: ${limitsEnabled ? '✅ Yes' : '❌ No'}`);
+
+        if (limitsEnabled) {
+            console.log('\n💡 Current Status: Transaction limits are active');
+            console.log(`• Maximum transfer amount: ${formatTokenAmount(currentLimit, metadata.decimals, metadata.symbol)}`);
+            console.log('• Limits apply to all transfers except excluded addresses');
+        } else {
+            console.log('\n💡 Current Status: Transaction limits are disabled');
+            console.log('• All transfers are allowed regardless of amount');
+            console.log('• Limit value is set but not enforced');
+        }
+    } catch (error) {
+        console.error('❌ Error retrieving current settings:', error);
+    }
+}
+
+async function manageAddressExclusions(provider: NetworkProvider, token: any, readline: any) {
+    console.log('\n🚫 Manage Address Exclusions');
+    console.log('='.repeat(30));
+
+    console.log('1. Add address to exclusions');
+    console.log('2. Remove address from exclusions');
+    console.log('3. Check if address is excluded');
+
+    const option = await new Promise<string>((resolve) => {
+        readline.question('\nSelect option (1-3): ', resolve);
+    });
+
+    const addressInput = await new Promise<string>((resolve) => {
+        readline.question('Enter address: ', resolve);
+    });
+
+    try {
+        const address = Address.parse(addressInput);
+
+        switch (option) {
+            case '1':
+                console.log('\n🚀 Adding address to exclusions...');
+                await token.send(
+                    provider.sender(),
+                    { value: getDefaultGas() },
+                    {
+                        $$type: 'SetExcludedFromLimits',
+                        address: address,
+                        excluded: true
+                    }
+                );
+                console.log('✅ Address exclusion update sent!');
+                break;
+
+            case '2':
+                console.log('\n🚀 Removing address from exclusions...');
+                await token.send(
+                    provider.sender(),
+                    { value: getDefaultGas() },
+                    {
+                        $$type: 'SetExcludedFromLimits',
+                        address: address,
+                        excluded: false
+                    }
+                );
+                console.log('✅ Address exclusion removal sent!');
+                break;
+
+            case '3':
+                const isExcluded = await token.getIsExcludedFromLimits(address);
+                console.log(`\n📋 Address Status:`);
+                console.log(`Address: ${address.toString()}`);
+                console.log(`Excluded from limits: ${isExcluded ? '✅ Yes' : '❌ No'}`);
+                break;
+
+            default:
+                console.log('❌ Invalid option');
+        }
+    } catch (error) {
+        console.error('❌ Error managing address exclusions:', error);
     }
 }

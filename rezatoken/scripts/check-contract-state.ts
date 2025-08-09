@@ -1,13 +1,14 @@
-import { Address, toNano } from '@ton/core';
-import { Token } from '../wrappers/token';
+import { Address } from '@ton/core';
+import { RezaToken } from '../wrappers/RezaToken';
 import { NetworkProvider } from '@ton/blueprint';
+import { extractMetadata, formatTokenAmount } from '../utils/metadata-helpers';
 
 export async function run(provider: NetworkProvider) {
     console.log("🔍 Checking RezaToken Contract State");
     
     // Use the deployed contract address
     const tokenAddress = Address.parse("kQCr3sfrMtkAHdzWGXvYg3qJNrfNcZQ8UHSeNCE6Er8Q-KbS");
-    const token = provider.open(Token.fromAddress(tokenAddress));
+    const token = provider.open(RezaToken.fromAddress(tokenAddress));
     
     try {
         console.log("\n📊 Basic Token Information:");
@@ -19,44 +20,43 @@ export async function run(provider: NetworkProvider) {
         console.log("Mintable:", jettonData.mintable);
         console.log("Owner:", jettonData.owner.toString());
         
-        // Get token metadata
-        console.log("Name:", await token.getGetName());
-        console.log("Symbol:", await token.getGetSymbol());
-        console.log("Decimals:", await token.getGetDecimals().toString());
+        // Extract metadata from content
+        const metadata = extractMetadata(jettonData.content);
+        console.log("Name:", metadata.name);
+        console.log("Symbol:", metadata.symbol);
+        console.log("Decimals:", metadata.decimals);
         
-        console.log("\n🛡️ Sell Restriction Configuration:");
+        console.log("\n💰 Token Economics:");
+        console.log("Max Supply: 1,000,000,000", metadata.symbol, "(1 billion)");
+        console.log("Current Supply:", formatTokenAmount(jettonData.totalSupply, metadata.decimals, metadata.symbol));
+        const remainingSupply = 1000000000n * (10n ** BigInt(metadata.decimals)) - jettonData.totalSupply;
+        console.log("Remaining Supply:", formatTokenAmount(remainingSupply, metadata.decimals, metadata.symbol));
         
-        // Get sell restriction data
-        const sellLimit = await token.getGetSellLimit();
-        console.log("Sell Limit:", sellLimit.toString(), "nanotons");
-        console.log("Sell Limit (TON):", Number(sellLimit) / 1e9, "TON");
-        
-        // Check owner approval status
-        const owner = jettonData.owner;
-        const isOwnerApproved = await token.getIsApprovedSeller(owner);
-        console.log("Owner Approved Seller:", isOwnerApproved);
-        
-        // Test some example addresses
+        // Test wallet address generation
+        console.log("\n🏦 Wallet Address Examples:");
         const testAddresses = [
+            jettonData.owner.toString(),
             "EQD4FPq-PRDieyQKkizFTRtSDyucUIqrj0v_zXJmqaDp6_0t",
             "EQBvW8Z5huBkMJYdnfAEM5JqTNkuWX3diqYENkWsIL0XggGG"
         ];
         
-        console.log("\n🏪 DEX Address Status:");
         for (const addr of testAddresses) {
-            const address = Address.parse(addr);
-            const isDex = await token.getIsDexAddress(address);
-            console.log(`${addr.slice(0, 10)}...${addr.slice(-6)}: ${isDex ? "✅ DEX" : "❌ Not DEX"}`);
-        }
-        
-        console.log("\n👤 Approved Seller Status:");
-        for (const addr of testAddresses) {
-            const address = Address.parse(addr);
-            const isApproved = await token.getIsApprovedSeller(address);
-            console.log(`${addr.slice(0, 10)}...${addr.slice(-6)}: ${isApproved ? "✅ Approved" : "❌ Not Approved"}`);
+            try {
+                const address = Address.parse(addr);
+                const walletAddress = await token.getGetWalletAddress(address);
+                const label = addr === jettonData.owner.toString() ? " (Owner)" : "";
+                console.log(`${addr.slice(0, 10)}...${addr.slice(-6)}${label}:`);
+                console.log(`  Wallet: ${walletAddress.toString()}`);
+            } catch (e) {
+                console.log(`${addr.slice(0, 10)}...${addr.slice(-6)}: Error getting wallet`);
+            }
         }
         
         console.log("\n✅ Contract state check completed successfully!");
+        console.log("\nℹ️  Note: This is a basic RezaToken without advanced features like");
+        console.log("   sell limits, address exclusions, or DEX restrictions.");
+        console.log("   The contract focuses on standard Jetton functionality with");
+        console.log("   owner-controlled minting and content management.");
         
     } catch (error) {
         console.error("❌ Error checking contract state:", error);

@@ -1,8 +1,9 @@
 import { Address, toNano } from '@ton/core';
-import { Token } from '../wrappers/token';
+import { RezaToken } from '../wrappers/RezaToken';
 import { NetworkProvider } from '@ton/blueprint';
 import * as readline from 'readline';
-import { getContractAddress, getDefaultGas, validateConfig, CONFIG } from './config';
+import { getContractAddress, getDefaultGas, validateConfig } from './config';
+import { extractMetadata } from '../utils/metadata-helpers';
 
 // Available deployed contract addresses (fallback if env not configured)
 const DEPLOYED_CONTRACTS = {
@@ -33,7 +34,7 @@ export async function run(provider: NetworkProvider) {
         contractAddress = await selectContractAddress();
     }
     
-    const token = provider.open(Token.fromAddress(contractAddress));
+    const token = provider.open(RezaToken.fromAddress(contractAddress));
     console.log(`\n📍 Using contract: ${contractAddress.toString()}`);
     
     // Define available scripts
@@ -177,19 +178,17 @@ async function checkContractState(provider: NetworkProvider, token: any): Promis
         console.log("Owner:", jettonData.owner.toString());
         
         // Get token metadata
-        console.log("Name:", await token.getGetName());
-        console.log("Symbol:", await token.getGetSymbol());
-        console.log("Decimals:", await token.getGetDecimals());
+        const metadata = extractMetadata(jettonData.content);
+        console.log("Name:", metadata.name);
+        console.log("Symbol:", metadata.symbol);
+        console.log("Decimals:", metadata.decimals);
         
         console.log("\n🛡️ Transaction Limits:");
-        const transactionLimit = await token.getGetTransactionLimit();
-        console.log("Transaction Limit:", transactionLimit.toString(), "units");
-        console.log("Transaction Limit (RTZ):", (Number(transactionLimit) / 1e9).toFixed(2));
+        console.log("Transaction Limits: Not implemented in basic contract");
         
         console.log("\n👤 Owner Status:");
         const owner = jettonData.owner;
-        const isOwnerExcluded = await token.getIsExcludedAddress(owner);
-        console.log("Owner Excluded from Limits:", isOwnerExcluded);
+        console.log("Owner Exclusions: Not implemented in basic contract");
         
     } catch (error) {
         console.error("❌ Error checking contract state:", error);
@@ -198,73 +197,14 @@ async function checkContractState(provider: NetworkProvider, token: any): Promis
 
 async function testTransactionLimits(provider: NetworkProvider, token: any): Promise<void> {
     console.log("🔧 Transaction Limit Management");
-    
-    const currentLimit = await token.getGetTransactionLimit();
-    console.log(`Current Limit: ${(Number(currentLimit) / 1e9).toFixed(2)} RTZ`);
-    
-    const newLimitInput = await getUserInput('Enter new transaction limit (in RTZ tokens): ');
-    const newLimit = toNano(newLimitInput);
-    
-    console.log('Setting new transaction limit...');
-    await token.send(
-        provider.sender(),
-        { value: getDefaultGas() },
-        {
-            $$type: 'SetTransactionLimit',
-            limit: newLimit
-        }
-    );
-    
-    console.log('⏳ Waiting for transaction...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
-    
-    const updatedLimit = await token.getGetTransactionLimit();
-    console.log(`Updated Limit: ${(Number(updatedLimit) / 1e9).toFixed(2)} RTZ`);
+    console.log("❌ Transaction limits are not implemented in this basic contract");
+    console.log("This contract focuses on standard Jetton functionality only");
 }
 
 async function testAddressExclusions(provider: NetworkProvider, token: any): Promise<void> {
     console.log("🏪 Address Exclusion Management");
-    
-    console.log('\n1. Add address to exclusions');
-    console.log('2. Remove address from exclusions');
-    console.log('3. Check address exclusion status');
-    
-    const choice = await getUserInput('Choose action (1-3): ');
-    const address = await getUserInput('Enter address: ');
-    const targetAddress = Address.parse(address);
-    
-    switch (choice) {
-        case '1':
-            console.log('Adding address to exclusions...');
-            await token.send(
-                provider.sender(),
-                { value: getDefaultGas() },
-                {
-                    $$type: 'AddExcludedAddress',
-                    address: targetAddress
-                }
-            );
-            console.log('✅ Address added to exclusions');
-            break;
-            
-        case '2':
-            console.log('Removing address from exclusions...');
-            await token.send(
-                provider.sender(),
-                { value: getDefaultGas() },
-                {
-                    $$type: 'RemoveExcludedAddress',
-                    address: targetAddress
-                }
-            );
-            console.log('✅ Address removed from exclusions');
-            break;
-            
-        case '3':
-            const isExcluded = await token.getIsExcludedAddress(targetAddress);
-            console.log(`Address excluded: ${isExcluded}`);
-            break;
-    }
+    console.log("❌ Address exclusions are not implemented in this basic contract");
+    console.log("This contract focuses on standard Jetton functionality only");
 }
 
 async function mintTokens(provider: NetworkProvider, token: any): Promise<void> {

@@ -3,13 +3,8 @@
   "projects": [
     {
       "name": "token",
-      "path": "contracts/token.tact",
-      "output": "build\\token",
-      "options": {
-        "debug": false,
-        "external": false
-      },
-      "mode": "full"
+      "path": "./contracts/token.tact",
+      "output": "./build/token"
     }
   ]
 }
