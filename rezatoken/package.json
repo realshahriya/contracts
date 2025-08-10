@@ -6,7 +6,10 @@
         "start": "blueprint run",
         "build": "blueprint build",
         "test": "jest --verbose",
-        "release": "blueprint pack && npm publish --access public"
+        "deploy": "blueprint run deploytoken",
+        "mint": "blueprint run mint-tokens",
+        "limiton": "blueprint run enable-limits",
+        "limitconfig": "blueprint run transaction-limits"
     },
     "dependencies": {
         "@aws-crypto/sha256-js": "^5.2.0",

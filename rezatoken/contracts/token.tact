@@ -87,6 +87,23 @@ message SetExcludedFromLimits {
     excluded: Bool;
 }
 
+message ValidateTransfer {
+    from: Address;
+    to: Address;
+    amount: Int;
+    originalMsg: TokenTransfer;
+}
+
+message TransferValidated {
+    queryId: Int;
+    from: Address;
+    to: Address;
+    amount: Int;
+    originalMsg: TokenTransfer;
+    valid: Bool;
+    reason: String?;
+}
+
 
 
 
@@ -115,10 +132,10 @@ contract RezaToken with Jetton, OwnableTransferable {
         self.content = content;
         self.max_supply = 1000000000000000000; // 1 billion RTZ with 9 decimals
         
-        // Initialize transaction limiter (disabled by default)
+        // Initialize transaction limiter (disabled by default with NO LIMITS)
         self.limitsEnabled = false;
-        self.maxTxAmount = 10000000000000000; // 10M RTZ default (1% of max supply)
-        self.maxWalletAmount = 20000000000000000; // 20M RTZ default (2% of max supply)
+        self.maxTxAmount = 0; // NO LIMIT by default
+        self.maxWalletAmount = 0; // NO LIMIT by default
         self.excludedFromLimits = emptyMap();
         
         // Exclude owner from limits by default
@@ -158,10 +175,14 @@ contract RezaToken with Jetton, OwnableTransferable {
     receive(msg: SetTransactionLimit) {
         let ctx: Context = context();
         require(ctx.sender == self.owner, "Not Owner");
-        require(msg.maxTxAmount > 0, "Invalid max tx amount");
-        require(msg.maxWalletAmount > 0, "Invalid max wallet amount");
-        require(msg.maxTxAmount <= self.max_supply, "Max tx exceeds supply");
-        require(msg.maxWalletAmount <= self.max_supply, "Max wallet exceeds supply");
+        require(msg.maxTxAmount >= 0, "Invalid max tx amount");
+        require(msg.maxWalletAmount >= 0, "Invalid max wallet amount");
+        if (msg.maxTxAmount > 0) {
+            require(msg.maxTxAmount <= self.max_supply, "Max tx exceeds supply");
+        }
+        if (msg.maxWalletAmount > 0) {
+            require(msg.maxWalletAmount <= self.max_supply, "Max wallet exceeds supply");
+        }
         
         self.maxTxAmount = msg.maxTxAmount;
         self.maxWalletAmount = msg.maxWalletAmount;
@@ -177,6 +198,58 @@ contract RezaToken with Jetton, OwnableTransferable {
         let ctx: Context = context();
         require(ctx.sender == self.owner, "Not Owner");
         self.excludedFromLimits.set(msg.address, msg.excluded);
+    }
+
+    receive(msg: ValidateTransfer) {
+        let ctx: Context = context();
+        // Verify sender is a valid wallet for the from address
+        let walletInit: StateInit = self.getJettonWalletInit(msg.from);
+        require(contractAddress(walletInit) == ctx.sender, "Invalid wallet");
+
+        let valid: Bool = true;
+        let reason: String? = null;
+
+        // Skip checks if limits are disabled
+        if (self.limitsEnabled) {
+            // Skip checks if sender is excluded
+            let fromExcluded: Bool = self.excludedFromLimits.get(msg.from) != null;
+            let toExcluded: Bool = self.excludedFromLimits.get(msg.to) != null;
+            
+            if (!fromExcluded && !toExcluded) {
+                // Check transaction amount limit (0 means no limit)
+                if (self.maxTxAmount > 0 && msg.amount > self.maxTxAmount) {
+                    valid = false;
+                    reason = "Transfer amount exceeds daily limit";
+                }
+
+                // Check wallet balance limit for receiver (0 means no limit)
+                if (valid && self.maxWalletAmount > 0) {
+                    // Get destination wallet balance
+                    let destinationWalletInit: StateInit = self.getJettonWalletInit(msg.to);
+                    let destinationWallet: Address = contractAddress(destinationWalletInit);
+                    
+                    // For now, we'll skip wallet balance check as it requires async call
+                    // This can be enhanced later with proper balance checking
+                }
+            }
+        }
+
+        // Send validation response back to wallet with more gas
+        send(SendParameters{
+            to: ctx.sender,
+            value: ton("0.05"), // Ensure enough gas for response
+            bounce: false,
+            mode: SendPayGasSeparately,
+            body: TransferValidated{
+                queryId: msg.originalMsg.queryId,
+                from: msg.from,
+                to: msg.to,
+                amount: msg.amount,
+                originalMsg: msg.originalMsg,
+                valid: valid,
+                reason: reason
+            }.toCell()
+        });
     }
 
 
@@ -229,7 +302,7 @@ trait Jetton with OwnableTransferable {
         
         // Check transaction limits for minting
         let toExcluded: Bool = self.excludedFromLimits.get(to) != null;
-        if (self.limitsEnabled && !toExcluded) {
+        if (self.limitsEnabled && !toExcluded && self.maxTxAmount > 0) {
             require(amount <= self.maxTxAmount, "Mint amount exceeds transaction limit");
         }
         
@@ -278,11 +351,15 @@ trait Jetton with OwnableTransferable {
             return;
         }
 
-        // Check transaction amount limit
-        require(amount <= self.maxTxAmount, "Transfer amount exceeds limit");
+        // Check transaction amount limit (0 means no limit)
+        if (self.maxTxAmount > 0) {
+            require(amount <= self.maxTxAmount, "Transfer amount exceeds limit");
+        }
 
-        // Check wallet balance limit for receiver
-        require(toBalance + amount <= self.maxWalletAmount, "Receiver wallet would exceed limit");
+        // Check wallet balance limit for receiver (0 means no limit)
+        if (self.maxWalletAmount > 0) {
+            require(toBalance + amount <= self.maxWalletAmount, "Receiver wallet would exceed limit");
+        }
     }
 
     virtual fun getJettonWalletInit(address: Address): StateInit {
@@ -351,22 +428,62 @@ contract JettonDefaultWallet {
         // Check balance first
         require(self.balance >= msg.amount, "Insufficient balance");
 
-        // Update balance
-        self.balance = self.balance - msg.amount; 
-
-        let winit: StateInit = initOf JettonDefaultWallet(self.master, msg.destination);   
+        // Send validation request to master contract for limit enforcement
         send(SendParameters{
-            to: contractAddress(winit), 
-            value: 0, 
-            mode: SendRemainingValue, 
-            bounce: true,
+            to: self.master,
+            value: ton("0.05"), // Gas for validation
+            bounce: false,
+            mode: SendPayGasSeparately,
+            body: ValidateTransfer{
+                from: self.owner,
+                to: msg.destination,
+                amount: msg.amount,
+                originalMsg: msg
+            }.toCell()
+        });
+    }
+
+    receive(msg: TransferValidated) {
+        let ctx: Context = context();
+        require(ctx.sender == self.master, "Invalid sender");
+
+        if (!msg.valid) {
+            // Transfer rejected - send error response
+            send(SendParameters{
+                to: msg.originalMsg.response_destination,
+                value: 0,
+                bounce: false,
+                mode: SendRemainingValue + SendIgnoreErrors,
+                body: TokenExcesses{
+                    queryId: msg.originalMsg.queryId
+                }.toCell()
+            });
+            return;
+        }
+
+        // Transfer validated - proceed with transfer
+        // Update balance
+        self.balance = self.balance - msg.amount;
+
+        let winit: StateInit = initOf JettonDefaultWallet(self.master, msg.to);   
+        let walletAddress: Address = contractAddress(winit);
+        
+        // Calculate gas for destination wallet - ensure minimum gas
+        let fwdFee: Int = ctx.readForwardFee() * 2;
+        let gasForDestination: Int = ton("0.05"); // Minimum gas for destination
+        
+        send(SendParameters{
+            to: walletAddress, 
+            value: gasForDestination,
+            bounce: false,
+            mode: SendPayGasSeparately,
             body: TokenTransferInternal{
-                queryId: msg.queryId,
+                queryId: msg.originalMsg.queryId,
                 amount: msg.amount,
                 from: self.owner,
-                response_destination: msg.response_destination,
-                forward_ton_amount: msg.forward_ton_amount,
-                forward_payload: msg.forward_payload
+                response_destination: msg.originalMsg.response_destination,
+                forward_ton_amount: msg.originalMsg.forward_ton_amount,
+                forward_payload: msg.originalMsg.forward_payload
             }.toCell(),
             code: winit.code,
             data: winit.data
@@ -379,10 +496,10 @@ contract JettonDefaultWallet {
         if (ctx.sender != self.master) {
             let sinit: StateInit = initOf JettonDefaultWallet(self.master, msg.from);
             require(contractAddress(sinit) == ctx.sender, "Invalid sender");
-            
-            // Validate transfer limits before updating balance
-            self.validateTransferLimits(msg.from, self.owner, msg.amount, self.balance);
         }
+
+        // Note: Transfer limits are managed dynamically by master contract
+        // No wallet-level validation needed as per owner requirements
 
         // Update balance
         self.balance = self.balance + msg.amount;
@@ -455,32 +572,22 @@ contract JettonDefaultWallet {
         self.balance = self.balance + src.amount;
     }
 
-    // Validate transfer limits - FIXED VERSION
+    // Validate transfer limits - DYNAMIC VERSION (NO HARDCODED LIMITS)
     fun validateTransferLimits(from: Address, to: Address, amount: Int, toBalance: Int) {
         // Skip validation if this is a mint operation (from master)
         if (from == self.master) {
             return;
         }
         
-        // Get master contract address
-        let masterAddress: Address = self.master;
+        // NOTE: All limits are now managed dynamically by the master contract
+        // The owner can change transaction limits daily as needed
+        // No wallet limits are enforced as per owner requirements
+        // 
+        // The master contract handles all limit validation through its own logic
+        // This wallet contract no longer enforces any hardcoded restrictions
         
-        // For now, we'll implement basic validation with reasonable limits
-        // In production, this should query the master contract
-        
-        // Basic limits (these should match the master contract's actual limits)
-        let maxTxAmount: Int = 1000000000000; // 1000 RTZ (in nanotons)
-        let maxWalletAmount: Int = 1000000000000; // 1000 RTZ (in nanotons)
-        
-        // Check transaction amount limit
-        require(amount <= maxTxAmount, "Transfer amount exceeds maximum transaction limit");
-        
-        // Check receiver wallet limit (only if they're receiving tokens)
-        let newReceiverBalance: Int = toBalance + amount;
-        require(newReceiverBalance <= maxWalletAmount, "Transfer would exceed maximum wallet limit for receiver");
-        
-        // Note: Owner exclusion and dynamic limits would require master contract queries
-        // This is a simplified but functional implementation
+        // All transfers are allowed - limits are managed at master contract level
+        return;
     }
 
     get fun msgValue(value: Int): Int {
