@@ -1,0 +1,217 @@
+One additional note from our side regarding development standards:
+
+All smart contracts must be:
+Fully Testable and Auditable
+Covered by 100% test cases for all critical functions
+Deployed and verified on Base Sepolia before mainnet launch
+Delivered with detailed README, test scripts, and deployment flows
+
+Flexible for Future Changes
+Please ensure that the architecture is future-proof and modular, allowing us to:
+Add new logic (e.g., alternative vesting models, dynamic treasury logic)
+Adjust parameters via multisig governance
+Upgrade core functions without redeploying contracts
+We understand that UUPS proxy is recommended — but can you confirm whether this is fully compatible and stable on Base L2, including:
+Proxy pattern integrity
+Upgrade workflows
+
+Deployment via popular frameworks like Hardhat/Foundry on Base?
+
+The long-term goal is to maintain agility for future product iterations without disrupting the deployed ecosystem.
+Clarification on start_timestamp in the Vesting Contract
+Yes, the start_timestamp parameter should define the point in time when the vesting schedule begins for each beneficiary. The contract must support:
+
+Multiple independent vesting schedules with customizable parameters:
+cliff
+slicePeriod
+duration
+% unlock at cliff
+Efficient batch-adding of beneficiaries (via Merkle proof or similar mechanism)
+On-chain claiming of unlocked tokens by beneficiaries
+This vesting mechanism will be used primarily for distributing allocations to team members, advisors, KOLs, and selected community participants in compliance with our tokenomics.
+
+Liquidity Contract – Treasury Purpose
+This contract is intended as a non-custodial treasury module, not as a traditional DEX LP contract. Its key purposes:
+Holding project-controlled reserves of $HYPEY and (optionally) stablecoins
+Enabling allocation/disbursement of tokens to designated wallets:
+Liquidity provisioning (e.g., via multisig-controlled wallet)
+Launchpad allocations
+Marketing/Community/Partnership funds
+Governance via multisig (Ownable)
+
+Upgradable via UUPS Proxy
+🔒 Note: The contract will not interact directly with DEX routers, nor expose any public-facing liquidity functions.
+
+DEX Integration
+Although this contract won’t directly interface with DEXs (like Uniswap or BaseSwap), we plan to deploy liquidity on public pools (e.g., $HYPEY/USDC) via multisig wallet actions. Therefore:
+No swap logic is needed
+No dependency on specific router contracts
+
+However, the treasury contract must allow token disbursement for LP provisioning
+   -Suggestions for Additional Best Practices
+To streamline development and ensure audit-readiness, please consider:
+Role-based access control: Distinct roles for vesting manager vs. treasury manager (e.g., via OpenZeppelin's AccessControl)
+Pausable logic: Optional pause mechanism to temporarily stop vesting claims or treasury disbursements in case of emergency
+Events: Emit structured events for each disbursement, vesting creation, and claim to support analytics and audit trails
+Pre-deployment testing: Use Foundry or Hardhat to achieve 100% coverage on all core contract logic
+Compliance: Ensure contracts are aligned with MiCA Article 69, including data persistence and update governance (multi-sig upgrades)
+✅ COMPLETED FIXES:
+VSC (Vesting Security Concerns):
+
+- VSC1 ✅ - Upgradeable Contract Backdoor: Implemented TimelockController with 24h delay + multisig
+- VSC2 ✅ - Reserve Address Hijacking: Added validation to prevent setting contract address as reserve
+- VSC3 ✅ - Overprivileged NFT Contracts: Added strict validation and amount limits for NFT/platform burns
+- VSC4 ✅ - Dynamic Rate Manipulation: Added controls and events for burn rate changes
+- VSC5 ✅ - Dusting Attack Vector: Implemented exempt wallets + 0.5% balance minimum for burns
+XSC (Extended Security Concerns):
+
+- XSC1 ✅ - Unused Merkle Root: Implemented addVestingScheduleWithProof function for batch vesting
+- XSC2 ✅ - Calculation Errors: Fixed cliff unlock and linear vesting calculations
+- XSC3 ✅ - Input Validation: Added comprehensive validation to vesting functions
+- XSC4 ✅ - Input Validation: Added validation to claim functions
+- XSC5 ✅ - Inconsistent Error Messages: Standardized all error messages
+ZSC (Zero Security Concerns):
+
+- ZSC1 ✅ - Ownership Initialization Front-Running: Protected with proper initialization
+- ZSC2 ✅ - Withdrawal Limits: Implemented 1,000,000 token limit per transaction + timelock
+- ZSC3 ✅ - Unbounded Token List: Added MAX_SUPPORTED_TOKENS = 50 limit
+- ZSC4 ✅ - Token Removal: Implemented proper array removal in removeSupportedToken
+- ZSC5 ✅ - Missing Event Emission: Added events to all initialize functions
+- ZSC6 ✅ - Unused Imports: Removed unused OwnableUpgradeable from Treasury
+- ZSC7 ✅ - Inconsistent Error Handling: Standardized all error messages
+Additional Requirements:
+
+- Batch Vesting ✅ - Implemented both Merkle proof method and batch array method
+- Multisig + Timelock ✅ - All critical functions protected by MULTISIG_ADMIN_ROLE + 24h timelock
+ Key Security Implementations:
+1. 1.
+   TimelockController Integration : 24-hour delay for all upgrades and critical operations
+2. 2.
+   Role-Based Access Control : MULTISIG_ADMIN_ROLE for all sensitive functions
+3. 3.
+   Withdrawal Limits : Maximum 1,000,000 tokens per transaction
+4. 4.
+   Input Validation : Comprehensive validation across all functions
+5. 5.
+   Burn Protection : Exempt wallets + minimum balance requirements
+6. 6.
+   Batch Operations : Both Merkle proof and array-based batch vesting
+7. 7.
+   Event Logging : Complete audit trail for all operations
+  Files Modified:
+- HYPEYToken.sol - Token security fixes
+- HYPEYTreasury.sol - Treasury security + timelock
+- HypeyVesting.sol - Vesting security + batch operations
+- deploy.js - Deployment with timelock integration
+All audit findings have been successfully addressed! 
+
+The contracts now implement:
+
+- ✅ Multisig + 24h timelock for upgrades
+- ✅ Withdrawal limits (1M tokens max per tx)
+- ✅ Comprehensive input validation
+- ✅ Protection against all identified attack vectors
+- ✅ Batch vesting capabilities (Merkle + Array methods)
+- ✅ Consistent error handling and event emission
+- ✅ Optimized imports and code structure
+Your smart contract system is now fully secured according to the audit recommendations!
+
+As part of the HYPEY project, we would like to commission the preparation of three basic smart contracts that we will launch on the Base L2 network . Below we send you a concise specification and ask for an indicative quote (cost + time) for the implementation of step I. We will commission the subsequent modules (Challenge Crowdfunding, Staking) in the next step - for now we do not include them in the calculation.
+Scope of stage I
+Contract
+Key functions
+Additional requirements
+HYPEY Token
+(ERC-20 standard / L2 equivalent)
+* mint / burn
+* allowance, safeTransfer, safeTransferFrom
+* burning-fee mechanism (trigger from transfer level)
+* transferability (Ownable → multisig)
+* UUPS Proxy - upgradability without change of address
+* full MiCA compliance (non-custodial, auditable code)
+Liquidity Pool (Treasury)
+* deposits according to tokenomy (percentage reserves)
+* transfer of tokens to designated addresses (launchpad, LP, marketing, etc.).
+* UUPS
+* Ownable (multisig owner)
+Vesting
+* create multiple schedules (cliff, slicePeriod, duration, % unlock on cliff)
+* batch-add of beneficiaries from CSV (Merkle proof or similar gas-efficient)
+* claim by beneficiary
+* UUPS
+* Ownable
+
+Minimum standards
+100 % test coverage of critical functions (Foundry/Hardhat).
+Deployment: Base Sepolia (test) → Base Mainnet (prod) + migration scripts.
+Documentation (README, flow diagram) for dev-ops and audit.
+Code prepared for external audit
+
+
+The HYPEY ecosystem requires a series of smart contracts to support its tokenized economy, ensuring full decentralization, compliance with the Markets in Crypto-Assets Regulation (MiCA), and transparent, automated fund distribution mechanisms.
+The key components include:
+The HYPEY Token Smart Contract – A utility token deployed on Base or Polygon L2, featuring vesting mechanisms, token burning, and liquidity allocation.
+The Challenge Crowdfunding Smart Contract – A decentralized contract that holds user deposits for challenges and automatically distributes rewards or refunds based on the challenge outcome.
+(Future) Staking Smart Contract (subject to legal viability under MiCA) – A staking mechanism fueled by the Proof of Livestream system, ensuring sustainable rewards for token holders.
+The fundamental principle behind these contracts is that HYPEY, as a platform, will never have access to or control over users’ funds, aligning with both decentralization ideals and MiCA compliance requirements.
+1. HYPEY Token Smart Contract
+Blockchain & Technical Considerations
+The token will be deployed on Base or Polygon L2 to ensure scalability, lower gas fees, and compatibility with future enhancements.
+It will follow an L2-compatible token standard rather than ERC-20 to maximize efficiency.
+Core Token Functionalities
+Vesting & Cliff Mechanisms: Tokens allocated for different purposes (Private Sale, Team, Marketing, Development, etc.) will have structured vesting schedules to prevent market manipulation.
+Burning Mechanism: A portion of the transaction fees or specific interactions can trigger token burning to regulate supply.
+Liquidity & Launchpad Allocation: Reserves will be allocated to ensure healthy liquidity and ecosystem growth.
+Utility Features
+Proof of Livestream: Tokens are generated and added to the staking reward pool based on livestream engagement metrics.
+Community Voting: Token holders will be able to participate in governance decisions, such as selecting new platform features or sponsored challenges.
+Virtual Item Trading: Users can spend tokens on digital goods within the HYPEY ecosystem, such as exclusive skins, boosters, or event access.
+Auto Swap: A seamless conversion mechanism between Hypey Gems (used by non-crypto users) and the $HYPEY token.
+Regulatory Compliance & Security
+No Custodial Control: HYPEY cannot store or control users' tokens at any point.
+On-Chain Transparency: All transactions will be auditable, ensuring compliance with regulatory scrutiny.
+Anti-Fraud & AML Protections: Preventative measures will be implemented to deter illicit activity.
+2. Challenge Crowdfunding Smart Contract
+Purpose & Decentralization
+The contract serves as a fully autonomous escrow system for challenge-based crowdfunding.Once users deposit tokens into a challenge pool, the smart contract independently holds and processes funds based on the challenge's success criteria.
+How It Works
+Users deposit tokens into the contract to back a specific challenge.The contract holds funds in a non-custodial manner (HYPEY does not have access).
+If the challenge is completed successfully:
+The reward is automatically transferred to the challenge creator.
+A small fee (predefined percentage) is allocated to HYPEY.
+If the challenge is not completed or fails:
+All funds are refunded to the original backers.
+HYPEY does not receive any payment.
+Key Features
+Trustless Fund Management: The contract guarantees that funds cannot be misused or withdrawn by any unauthorized entity.
+Success-Based Fee Collection: HYPEY only earns from challenges that are successfully completed, ensuring fairness.
+Decentralized Success Verification: The contract will support oracle integration or community-based validation to determine challenge outcomes.
+Dispute Resolution Mechanism: If a dispute arises, the contract can integrate with a DAO arbitration system or an on-chain validation mechanism.
+Regulatory Compliance
+Funds remain under smart contract control, not HYPEY’s.
+Full refund mechanism protects contributors from financial risk.
+
+Ensures a transparent, automated process in line with MiCA standards.
+3. (Future) Staking Smart Contract (Pending legal review under MiCA)
+Concept
+The staking contract will be fueled by Proof of Livestream rewards, allowing token holders to stake their $HYPEY tokens in exchange for passive income.
+A predefined staking pool will be allocated to ensure sustainability.
+Key Functionalities
+Dynamic Rewards: Adjusted based on staking participation and available reward pools.
+Withdrawal Safeguards: Prevents excessive liquidity drains through withdrawal limits.
+Flexible Lock-up Periods: Users can opt for different staking durations with corresponding reward multipliers.
+Security & Compliance
+Non-Custodial Staking: Users retain control over their tokens at all times.
+Sustainable Model: Rewards are funded in part by platform engagement, ensuring long-term viability.
+Anti-Manipulation Measures: Prevents large-scale abuse of the staking system.
+
+
+
+2 Please quote
+Estimated number of man-hours and total cost (net).
+Schedule - indicative weeks / milestones (kick-off, testnet, mainnet).
+Payment model
+Confirmation of the stackup used (Solidity ≥0.8.x, Foundry/Hardhat, OZ-lib).
+If you need additional information, please let us know - we will be happy to elaborate.
+ Please send us a quote n
+Thanks and goodbye! Best regards Sylwia

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.30;
 
 import "@openzeppelin/contracts-upgradeable/governance/TimelockControllerUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -78,7 +78,6 @@ contract MockTimelock is
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         trustedInitializer = msg.sender;
-        _disableInitializers();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -97,7 +96,7 @@ contract MockTimelock is
         address[] memory proposers,
         address[] memory executors,
         address admin
-    ) public initializer {
+    ) public override initializer {
         if (msg.sender != trustedInitializer) revert UnauthorizedInitializer();
         if (minDelay < MIN_DELAY || minDelay > MAX_DELAY) revert InvalidDelay();
         if (proposers.length == 0) revert EmptyProposersArray();
@@ -118,14 +117,14 @@ contract MockTimelock is
         __ReentrancyGuard_init();
         
         // Setup upgrader role
-        _setupRole(UPGRADER_ROLE, admin);
+        _grantRole(UPGRADER_ROLE, admin);
         if (admin != address(0)) {
-            _setupRole(UPGRADER_ROLE, admin);
+            _grantRole(UPGRADER_ROLE, admin);
         }
         
         // Grant upgrader role to proposers as well
         for (uint256 i = 0; i < proposers.length; i++) {
-            _setupRole(UPGRADER_ROLE, proposers[i]);
+            _grantRole(UPGRADER_ROLE, proposers[i]);
         }
         
         timelockInitialized = true;
@@ -161,32 +160,8 @@ contract MockTimelock is
         return super.getMinDelay();
     }
     
-    /**
-     * @notice Check if an operation is pending
-     * @param id Operation identifier
-     * @return bool True if operation is pending
-     */
-    function isOperationPending(bytes32 id) public view override returns (bool) {
-        return super.isOperationPending(id);
-    }
-    
-    /**
-     * @notice Check if an operation is ready for execution
-     * @param id Operation identifier
-     * @return bool True if operation is ready
-     */
-    function isOperationReady(bytes32 id) public view override returns (bool) {
-        return super.isOperationReady(id);
-    }
-    
-    /**
-     * @notice Check if an operation is done
-     * @param id Operation identifier
-     * @return bool True if operation is done
-     */
-    function isOperationDone(bytes32 id) public view override returns (bool) {
-        return super.isOperationDone(id);
-    }
+    // Note: isOperationPending, isOperationReady, and isOperationDone
+    // are inherited from TimelockControllerUpgradeable and don't need to be redeclared
     
     /**
      * @notice Get the timestamp when an operation becomes ready
@@ -205,7 +180,7 @@ contract MockTimelock is
      * @notice Emergency pause function (if needed for testing)
      * @dev This is a mock function for testing purposes
      */
-    function emergencyPause() external onlyRole(TIMELOCK_ADMIN_ROLE) {
+    function emergencyPause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         emit EmergencyAction("emergency_pause", msg.sender);
     }
     
@@ -213,7 +188,7 @@ contract MockTimelock is
      * @notice Emergency unpause function (if needed for testing)
      * @dev This is a mock function for testing purposes
      */
-    function emergencyUnpause() external onlyRole(TIMELOCK_ADMIN_ROLE) {
+    function emergencyUnpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
         emit EmergencyAction("emergency_unpause", msg.sender);
     }
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.30;
 
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
@@ -144,7 +144,6 @@ contract HYPEYTreasury is
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         trustedInitializer = msg.sender;
-        _disableInitializers();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -156,7 +155,10 @@ contract HYPEYTreasury is
      * @param admin Initial admin address
      * @param timelockAddress Timelock controller address
      */
-    function initialize(address admin, address timelockAddress) public initializer {
+    function initialize(
+        address admin, 
+        address timelockAddress
+    ) public initializer {
         if (msg.sender != trustedInitializer) revert UnauthorizedInitializer();
         if (admin == address(0)) revert InvalidAddress();
         if (timelockAddress == address(0)) revert InvalidAddress();
@@ -481,6 +483,7 @@ contract HYPEYTreasury is
     function _authorizeUpgrade(address newImplementation) 
         internal 
         override 
+        view
         onlyRole(MULTISIG_ADMIN_ROLE) 
     {
         if (msg.sender != address(timelock)) revert UpgradeOnlyViaTimelock();

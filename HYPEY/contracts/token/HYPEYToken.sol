@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.30;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -110,6 +110,7 @@ contract HYPEYToken is
     event TimelockProposalCreated(bytes32 indexed proposalId, string action, uint256 executeTime);
     event TimelockProposalExecuted(bytes32 indexed proposalId, string action);
     event EmergencyPauseToggled(bool paused);
+    event TokenInitialized(address indexed owner, address indexed reserveBurnAddress, address indexed timelock);
 
     /*//////////////////////////////////////////////////////////////
                                 ERRORS
@@ -139,7 +140,6 @@ contract HYPEYToken is
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         trustedInitializer = msg.sender;
-        _disableInitializers();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -161,14 +161,12 @@ contract HYPEYToken is
         if (_reserveBurnAddress == address(0)) revert InvalidAddress();
         if (timelockAddress == address(0)) revert InvalidAddress();
         if (initialOwner == address(0)) revert InvalidAddress();
-
+        
         __ERC20_init("HYPEY Token", "HYPEY");
-        __Ownable_init();
+        __Ownable_init(initialOwner);
         __UUPSUpgradeable_init();
         __AccessControl_init();
         __ReentrancyGuard_init();
-
-        _transferOwnership(initialOwner);
         _grantRole(DEFAULT_ADMIN_ROLE, initialOwner);
         _grantRole(MULTISIG_ADMIN_ROLE, initialOwner);
         _grantRole(PLATFORM_MANAGER_ROLE, initialOwner);
@@ -181,6 +179,9 @@ contract HYPEYToken is
 
         _mint(address(this), INITIAL_SUPPLY);
         ownerInitialized = true;
+        
+        // AUDIT FIX: Add missing event emission
+        emit TokenInitialized(initialOwner, _reserveBurnAddress, timelockAddress);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -261,20 +262,25 @@ contract HYPEYToken is
         uint256 senderBalance = balanceOf(sender);
         uint256 minBurnAmount = _calculateMinBurnAmount(senderBalance);
         
-        // VSC5 Fix: Apply burn tax to small transfers unless sender is specifically exempted
-        if (amount < minBurnAmount && !isExemptFromSmallTransferRestrictions[sender]) {
-            // Apply burn tax even for small transfers to prevent dusting attacks
-            uint256 smallTransferTaxBps = _calculateTaxRate(sender, recipient);
-            if (smallTransferTaxBps > 0) {
-                _executeBurnAndTransfer(sender, recipient, amount, smallTransferTaxBps);
+        // SECURITY FIX: Enhanced dusting attack protection
+        if (amount < minBurnAmount) {
+            // Apply burn tax to small transfers unless sender is specifically exempted
+            if (!isExemptFromSmallTransferRestrictions[sender]) {
+                // Apply minimum burn tax for small transfers to prevent dusting attacks
+                uint256 smallTransferTaxBps = _calculateTaxRate(sender, recipient);
+                // Ensure minimum tax rate for small transfers (at least 1%)
+                if (smallTransferTaxBps < burnRateBasisPoints) {
+                    smallTransferTaxBps = burnRateBasisPoints;
+                }
+                if (smallTransferTaxBps > 0) {
+                    _executeBurnAndTransfer(sender, recipient, amount, smallTransferTaxBps);
+                    return;
+                }
+            } else {
+                // Skip burn for specifically exempted small transfers
+                super._transfer(sender, recipient, amount);
                 return;
             }
-        }
-        
-        // Skip burn for exempt addresses or exempted small transfers
-        if (amount < minBurnAmount && isExemptFromSmallTransferRestrictions[sender]) {
-            super._transfer(sender, recipient, amount);
-            return;
         }
 
         // Determine tax rate based on transaction type
@@ -489,7 +495,7 @@ contract HYPEYToken is
      * @param wallet Address to modify
      * @param exempt Whether the address should be exempt from small transfer restrictions
      */
-    function setSmallTransferExemption(address wallet, bool exempt) external onlyOwner {
+    function setSmallTransferExempt(address wallet, bool exempt) external onlyOwner {
         if (wallet == address(0)) revert InvalidAddress();
         
         isExemptFromSmallTransferRestrictions[wallet] = exempt;
@@ -704,6 +710,7 @@ contract HYPEYToken is
      */
     function _authorizeUpgrade(address newImplementation) 
         internal 
+        view
         override 
         onlyRole(MULTISIG_ADMIN_ROLE) 
     {
@@ -725,16 +732,16 @@ contract HYPEYToken is
      * @param to Address receiving tokens
      * @param amount Amount being transferred
      */
-    function _beforeTokenTransfer(
+    function _update(
         address from,
         address to,
         uint256 amount
     ) internal override {
-        super._beforeTokenTransfer(from, to, amount);
-        
         // Update dynamic burn rate if enabled
         if (dynamicBurnEnabled && from != address(0) && to != address(0)) {
             _updateDynamicBurnRate();
         }
+        
+        super._update(from, to, amount);
     }
 }

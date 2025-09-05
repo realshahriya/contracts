@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.25;
+pragma solidity ^0.8.30;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
@@ -32,14 +32,14 @@ contract HypeyVesting is
     bytes32 public constant MULTISIG_ADMIN_ROLE = keccak256("MULTISIG_ADMIN_ROLE");
     uint256 public constant MAX_BATCH_SIZE = 100;
     uint256 public constant MAX_CLIFF_PERCENT = 100;
-
+    
     /*//////////////////////////////////////////////////////////////
                         IMMUTABLE VARIABLES
     //////////////////////////////////////////////////////////////*/
     
     /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
     address public immutable trustedInitializer;
-
+    
     /*//////////////////////////////////////////////////////////////
                             STRUCTS
     //////////////////////////////////////////////////////////////*/
@@ -54,7 +54,17 @@ contract HypeyVesting is
         uint256 slicePeriodSeconds;
         uint256 cliffUnlockPercent;
     }
-
+    
+    struct VestingParams {
+        address beneficiary;
+        uint256 totalAmount;
+        uint256 start;
+        uint256 cliffDuration;
+        uint256 duration;
+        uint256 slicePeriodSeconds;
+        uint256 cliffUnlockPercent;
+    }
+    
     /*//////////////////////////////////////////////////////////////
                             STATE VARIABLES
     //////////////////////////////////////////////////////////////*/
@@ -153,7 +163,6 @@ contract HypeyVesting is
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         trustedInitializer = msg.sender;
-        _disableInitializers();
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -176,7 +185,7 @@ contract HypeyVesting is
         if (_owner == address(0)) revert InvalidAddress();
         if (timelockAddress == address(0)) revert InvalidAddress();
         
-        __Ownable_init();
+        __Ownable_init(_owner);
         __Pausable_init();
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
@@ -184,16 +193,12 @@ contract HypeyVesting is
         
         token = IERC20Upgradeable(tokenAddress);
         
-        if (_owner != msg.sender) {
-            _transferOwnership(_owner);
-        }
-        
-        _setupRole(DEFAULT_ADMIN_ROLE, _owner);
-        _setupRole(MULTISIG_ADMIN_ROLE, _owner);
+        _grantRole(DEFAULT_ADMIN_ROLE, _owner);
+        _grantRole(MULTISIG_ADMIN_ROLE, _owner);
         
         timelock = TimelockControllerUpgradeable(timelockAddress);
-        _setupRole(DEFAULT_ADMIN_ROLE, address(timelock));
-        _setupRole(MULTISIG_ADMIN_ROLE, address(timelock));
+        _grantRole(DEFAULT_ADMIN_ROLE, address(timelock));
+        _grantRole(MULTISIG_ADMIN_ROLE, address(timelock));
         
         emit VestingInitialized(tokenAddress, _owner, timelockAddress);
     }
@@ -309,23 +314,18 @@ contract HypeyVesting is
         uint256 cliffUnlockPercent,
         bytes32[] calldata merkleProof
     ) external {
-        if (merkleRoot == bytes32(0)) revert MerkleRootNotSet();
-        
-        bytes32 leaf = keccak256(abi.encodePacked(
+        _verifyMerkleProof(
             beneficiary,
             totalAmount,
             start,
             cliffDuration,
             duration,
             slicePeriodSeconds,
-            cliffUnlockPercent
-        ));
+            cliffUnlockPercent,
+            merkleProof
+        );
         
-        if (!MerkleProofUpgradeable.verify(merkleProof, merkleRoot, leaf)) {
-            revert InvalidMerkleProof();
-        }
-        
-        _validateVestingParams(
+        _createVestingSchedule(
             beneficiary,
             totalAmount,
             start,
@@ -334,82 +334,31 @@ contract HypeyVesting is
             slicePeriodSeconds,
             cliffUnlockPercent
         );
-        
-        vestingSchedules[beneficiary].push(
-            VestingSchedule({
-                initialized: true,
-                totalAmount: totalAmount,
-                released: 0,
-                start: start,
-                cliff: start + cliffDuration,
-                duration: duration,
-                slicePeriodSeconds: slicePeriodSeconds,
-                cliffUnlockPercent: cliffUnlockPercent
-            })
-        );
-        
-        emit VestingCreated(beneficiary, vestingSchedules[beneficiary].length - 1, totalAmount);
     }
 
     /**
      * @notice Add multiple vesting schedules in batch
-     * @param beneficiaries Array of beneficiary addresses
-     * @param totalAmounts Array of total amounts
-     * @param starts Array of start times
-     * @param cliffDurations Array of cliff durations
-     * @param durations Array of total durations
-     * @param slicePeriodSeconds Array of slice periods
-     * @param cliffUnlockPercents Array of cliff unlock percentages
+     * @param schedules Array of vesting parameter structs
      */
     function addBatchVestingSchedules(
-        address[] calldata beneficiaries,
-        uint256[] calldata totalAmounts,
-        uint256[] calldata starts,
-        uint256[] calldata cliffDurations,
-        uint256[] calldata durations,
-        uint256[] calldata slicePeriodSeconds,
-        uint256[] calldata cliffUnlockPercents
+        VestingParams[] calldata schedules
     ) external onlyRole(MULTISIG_ADMIN_ROLE) {
-        uint256 length = beneficiaries.length;
-        
+        uint256 length = schedules.length;
         if (length == 0) revert EmptyArray();
         if (length > MAX_BATCH_SIZE) revert BatchSizeExceeded();
-        if (length != totalAmounts.length) revert ArrayLengthMismatch();
-        if (length != starts.length) revert ArrayLengthMismatch();
-        if (length != cliffDurations.length) revert ArrayLengthMismatch();
-        if (length != durations.length) revert ArrayLengthMismatch();
-        if (length != slicePeriodSeconds.length) revert ArrayLengthMismatch();
-        if (length != cliffUnlockPercents.length) revert ArrayLengthMismatch();
-        
-        for (uint256 i = 0; i < length; i++) {
-            _validateVestingParams(
-                beneficiaries[i],
-                totalAmounts[i],
-                starts[i],
-                cliffDurations[i],
-                durations[i],
-                slicePeriodSeconds[i],
-                cliffUnlockPercents[i]
+    
+        for (uint256 i; i < length;) {
+            VestingParams calldata p = schedules[i];
+            _createVestingSchedule(
+                p.beneficiary,
+                p.totalAmount,
+                p.start,
+                p.cliffDuration,
+                p.duration,
+                p.slicePeriodSeconds,
+                p.cliffUnlockPercent
             );
-            
-            vestingSchedules[beneficiaries[i]].push(
-                VestingSchedule({
-                    initialized: true,
-                    totalAmount: totalAmounts[i],
-                    released: 0,
-                    start: starts[i],
-                    cliff: starts[i] + cliffDurations[i],
-                    duration: durations[i],
-                    slicePeriodSeconds: slicePeriodSeconds[i],
-                    cliffUnlockPercent: cliffUnlockPercents[i]
-                })
-            );
-            
-            emit VestingCreated(
-                beneficiaries[i], 
-                vestingSchedules[beneficiaries[i]].length - 1, 
-                totalAmounts[i]
-            );
+            unchecked { ++i; }
         }
     }
 
@@ -662,11 +611,113 @@ contract HypeyVesting is
      * @notice Authorize upgrade with timelock and multisig requirements
      * @param newImplementation Address of the new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal override {
+    function _authorizeUpgrade(address newImplementation) internal override view {
         if (msg.sender != address(timelock)) revert UpgradeOnlyViaTimelock();
         if (!hasRole(MULTISIG_ADMIN_ROLE, tx.origin)) revert UpgradeRequiresMultisigAdmin();
         
         // Silence unused parameter warning
         newImplementation;
     }
+
+    /**
+     * @notice Validate batch array parameters
+     * @dev Helper function to reduce stack depth in addBatchVestingSchedules
+     */
+    function _validateBatchArrays(
+        uint256 beneficiariesLength,
+        uint256 totalAmountsLength,
+        uint256 startsLength,
+        uint256 cliffDurationsLength,
+        uint256 durationsLength,
+        uint256 slicePeriodSecondsLength,
+        uint256 cliffUnlockPercentsLength
+    ) internal pure {
+        if (beneficiariesLength == 0) revert EmptyArray();
+        if (beneficiariesLength > MAX_BATCH_SIZE) revert BatchSizeExceeded();
+        if (beneficiariesLength != totalAmountsLength) revert ArrayLengthMismatch();
+        if (beneficiariesLength != startsLength) revert ArrayLengthMismatch();
+        if (beneficiariesLength != cliffDurationsLength) revert ArrayLengthMismatch();
+        if (beneficiariesLength != durationsLength) revert ArrayLengthMismatch();
+        if (beneficiariesLength != slicePeriodSecondsLength) revert ArrayLengthMismatch();
+        if (beneficiariesLength != cliffUnlockPercentsLength) revert ArrayLengthMismatch();
+    }
+
+    /**
+     * @notice Verify merkle proof for vesting parameters
+     * @dev Helper function to reduce stack depth in addVestingScheduleWithProof
+     */
+    function _verifyMerkleProof(
+        address beneficiary,
+        uint256 totalAmount,
+        uint256 start,
+        uint256 cliffDuration,
+        uint256 duration,
+        uint256 slicePeriodSeconds,
+        uint256 cliffUnlockPercent,
+        bytes32[] calldata merkleProof
+    ) internal view {
+        if (merkleRoot == bytes32(0)) revert MerkleRootNotSet();
+        
+        bytes32 leaf = keccak256(abi.encodePacked(
+            beneficiary,
+            totalAmount,
+            start,
+            cliffDuration,
+            duration,
+            slicePeriodSeconds,
+            cliffUnlockPercent
+        ));
+        
+        if (!MerkleProofUpgradeable.verify(merkleProof, merkleRoot, leaf)) {
+            revert InvalidMerkleProof();
+        }
+    }
+
+    /**
+     * @notice Create a single vesting schedule
+     * @dev Optimized helper function to minimize stack usage
+     */
+    function _createVestingSchedule(
+        address beneficiary,
+        uint256 totalAmount,
+        uint256 start,
+        uint256 cliffDuration,
+        uint256 duration,
+        uint256 slicePeriodSeconds,
+        uint256 cliffUnlockPercent
+    ) internal {
+        // Validate parameters first
+        _validateVestingParams(
+            beneficiary,
+            totalAmount,
+            start,
+            cliffDuration,
+            duration,
+            slicePeriodSeconds,
+            cliffUnlockPercent
+        );
+        
+        // Check total allocation limit and update in one step
+        if (totalAllocated + totalAmount > token.balanceOf(address(this)) + totalAllocated) {
+            revert TotalAllocationExceeded();
+        }
+        totalAllocated += totalAmount;
+        
+        // Create schedule struct inline to reduce stack usage
+        vestingSchedules[beneficiary].push(VestingSchedule({
+            initialized: true,
+            totalAmount: totalAmount,
+            released: 0,
+            start: start,
+            cliff: start + cliffDuration,
+            duration: duration,
+            slicePeriodSeconds: slicePeriodSeconds,
+            cliffUnlockPercent: cliffUnlockPercent
+        }));
+        
+        // Emit event with reduced local variable usage
+        emit VestingCreated(beneficiary, vestingSchedules[beneficiary].length - 1, totalAmount);
+    }
+    
+
 }
