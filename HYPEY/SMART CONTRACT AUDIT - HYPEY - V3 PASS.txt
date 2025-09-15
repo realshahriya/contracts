@@ -1,0 +1,283 @@
+
+32
+5.2.5 | VSC5 - Dusting attack vector (Low) 
+ 
+Description: 
+ 
+The protocol currently exempts transfers below 100 tokens from the burn tax. 
+This creates a potential dusting attack vector where attackers can: 
+●  Spam wallets with tiny, exempt transfers (polluting user balances). 
+●  Track wallet activity by sending dust tokens and monitoring on-chain movements. 
+ 
+ 
+Technical Impact: 
+ 
+The 100-token exemption bypasses the burn tax, making it cheap for attackers to send 
+dust. 
+ 
+ 
+Recommendations: 
+ 
+Instead of a blanket exemption, allow specific addresses (e.g., exchanges, trusted 
+contracts) to bypass the burn tax for small transfers. 
+ 
+mapping(address => bool) public isExempt; 
+ 
+function _transferWithBurn(address sender, uint256 amount) internal { 
+    if (amount < MIN_EXEMPT && !isExempt[sender]) { 
+        applyBurnTax(); 
+    } 
+} 
+ 
+You can also make the exemption scale with the sender’s balance (for ex transfers < 0.1% 
+of balance are exempt). 
+ 
+function _transferWithBurn(address sender, uint256 amount) internal { 
+    uint256 balance = balanceOf(sender); 
+    if (amount < (balance * 1 / 1000)) { // 0.1% threshold 
+        applyBurnTax(); 
+    } 
+} 
+5.2.8 | XSC3 - Lack of input validation [Low] 
+ 
+Description: 
+ 
+Critical functions like addVestingSchedule() lack validation for: 
+ 
+1.  Zero addresses (beneficiary != address(0)) 
+2.  Time consistency (start < cliff < duration) 
+3.  Total amount sanity checks (totalAmount > 0) 
+ 
+Technical Impact: 
+ 
+Example of a vulnerable path: 
+ 
+addVestingSchedule(address(0), 0, 0, 0, 0, 0, 200); // Would silently accept 
+ 
+ 
+Recommendations: 
+ 
+Add comprehensive validation: 
+ 
+function addVestingSchedule( 
+    address beneficiary, 
+    uint256 totalAmount, 
+    uint256 start, 
+    uint256 cliffDuration, 
+    uint256 duration, 
+    uint256 slicePeriodSeconds, 
+    uint256 cliffUnlockPercent 
+) external onlyOwner { 
+    require(beneficiary != address(0), "Zero address"); 
+    require(totalAmount > 0, "Zero amount"); 
+    require(start >= block.timestamp, "Start in past"); 
+    require(cliffDuration <= duration, "Cliff > duration"); 
+    require(duration > 0 && slicePeriodSeconds > 0, "Invalid duration"); 
+    require(cliffUnlockPercent <= 100, "Invalid %"); 
+ 
+ 
+5.2.9 | XSC4 - Lack of input validation [Low] 
+ 
+Description: 
+ 
+While basic events exist for claims/deposits, these critical actions lack events: 
+ 
+1.  Vesting schedule modification 
+2.  Ownership transfers (inherited but not explicitly logged) 
+3.  Emergency pauses 
+ 
+ 
+Technical Impact: 
+ 
+Off-chain monitors can't track all state changes 
+Users cant prove historical schedule terms 
+ 
+ 
+Recommendations: 
+ 
+Add events for: 
+ 
+event VestingModified(address indexed beneficiary, uint256 index); 
+event EmergencyAction(string action, address executor); 
+ 
+Emit during: 
+ 
+Schedule updates 
+Admin withdrawals 
+Pause/unpause 
+ 
+5.2.10 | XSC5 - Inconsistent Error Messages [Low] 
+ 
+Description: 
+ 
+Error messages vary between: 
+ 
+Reverts with strings ("Invalid index") 
+Custom errors (InvalidInitialization()) 
+Generic requires ("Token transfer failed") 
+ 
+ 
+Technical Impact: 
+ 
+Hard to grep/filter logs 
+Some errors dont have enough context 
+ 
+Recommendations: 
+ 
+Use descriptive strings, for example: 
+ 
+require(totalAmount > 0, "HypeyVesting: Zero amount prohibited"); 
+ 
+ 
+5.2.11 | ZSC1 - Ownership Initialization Front-Running [High] 
+ 
+Description: 
+ 
+Between proxy deployment and owner finalization there’s a brief window where no owner 
+is set, opening a potential front-running attack by a malicious actor who might initialize as 
+owner first. 
+ 
+Recommendations: 
+ 
+In deployment scripts, immediately invoke initialize in the same transaction as proxy creation 
+or use a factory that atomically sets ownership. 
+ 
+5.2.12 | ZSC2 - No withdrawal limits [High] 
+ 
+Description: 
+ 
+The disburseToken and disburseETH functions grant the contract owner unfettered ability 
+to move any amount of any supported asset at any time: 
+function disburseToken( 
+    address token, 
+    address to, 
+    uint256 amount 
+) external onlyOwner whenNotPaused { ... } 
+ 
+function disburseETH(address payable to, uint256 amount) 
+    external onlyOwner whenNotPaused {  } 
+ 
+Analogies: 
+ 
+Parity Multisig Freeze (2017): A bug allowed a single actor to “kill” a multisig wallet, 
+demonstrating the dangers of relying on one privileged key. 
+ 
+Technical Impact: 
+ 
+Single-Point-of-Failure 
+If the owner private key is ever compromised through phishing, malware, or insider threat an 
+attacker can drain the entire treasury in one transaction. 
+ 
+No On-Chain Safeguards 
+There are no built-in checks on maximum per-transaction amounts, no daily or weekly caps, 
+and no delayed execution window. 
+ 
+Reduced Transparency for Users 
+Even honest owners cant credibly commit to holding funds long-term, since they could 
+on-chain withdraw everything at once. 
+ 
+ 
+Recommendations: 
+ 
+Per-Transaction and Daily Caps 
+ 
+●  Track withdrawals with a rolling window. 
+●  For example enforce amount ≤ maxPerTx and dailyTotal[token] + amount ≤ 
+dailyCap[token]. 
+ 
+Multisignature or Timelock 
+ 
+●  Require n of m owner approvals (using. Gnosis Safe). 
+●  Or route large withdrawals (> threshold) through a timelock contract (24 h delay). 
+ 
+On-Chain Withdrawal Requests 
+ 
+●  Owner proposes a withdrawal, which must be “executed” after a delay. 
+●  Allows off-chain stakeholders to audit and react to suspicious requests. 
+ 
+5.2.13 | ZSC3 - Unbounded Supported Token List [Medium] 
+ 
+Description: 
+ 
+getSupportedTokens returns the entire supportedTokenList array, which can grow without 
+bound and eventually exceed gas limits when iterating or returning the full list. 
+ 
+Recommendations: 
+ 
+Consider adding a reasonable maximum limit or implementing pagination for the 
+getSupportedTokens function. 
+5.2.14 | ZSC4 -  No Removal from supportedTokenList Array [Medium] 
+ 
+Description: 
+ 
+Even after removeSupportedToken flips the mapping flag, the token address remains in 
+supportedTokenList, leading to stale entries and wasted gas on lookups or on-chain UI.   
+ 
+Recommendations: 
+ 
+Implement logic to remove the token from the array or track active/inactive status differently.
+5.2.15 | ZSC5 -  Missing Event Emission in initialize [Low] 
+ 
+Description: 
+ 
+The initialize function sets up ownership but does not emit any event, making it harder to 
+track critical setup steps on-chain.  
+ 
+Recommendations: 
+ 
+Emit a custom Initialized(address indexed newOwner) event (or leverage OpenZeppelin 
+OwnershipTransferred pattern) at the end of initialization.  
+5.2.16 | ZSC6 -  Unused Imports Increasing Bytecode Size [Low] 
+ 
+Description: 
+ 
+Several OpenZeppelin interfaces (IERC1967, IBeacon) are imported but never used, 
+inflating contract size and deployment costs.   
+ 
+Recommendations: 
+ 
+Remove all unused imports and interfaces; audit for other dead code to stay below bytecode 
+size limits.  
+5.2.17 | ZSC7 -  Inconsistent Error-Handling Approach [Low] 
+ 
+Description: 
+ 
+Mix of require statements and custom errors leads to non-uniform gas usage and harder 
+maintenance.    
+ 
+Recommendations: 
+ 
+Standardize on custom errors (error UnsupportedToken(address token)) for all input checks 
+to save gas and improve clarity.   
+ 
+6. Limitations and Disclaimers 
+This audit has been conducted based on the provided smart contract source code, 
+documentation, and information shared by the project team up to the audit date. The 
+following limitations and disclaimers apply: 
+●  No Guarantee of Complete Security: While reasonable efforts have been made to 
+identify vulnerabilities, no audit can guarantee the absolute security or correctness 
+of any software, especially in rapidly evolving blockchain ecosystems. 
+●  Scope Limitation: The audit scope was limited to the smart contracts provided. 
+Off-chain systems, front-end applications, APIs, infrastructure, or any external 
+dependencies are outside the scope of this audit unless explicitly stated. 
+●  Code Changes Post-Audit: Any code modifications, updates, or deployment 
+processes executed after the audit are not covered by this report. New 
+vulnerabilities may arise from future code changes or external developments. 
+●  Undiscovered Vulnerabilities: There is always a possibility that undiscovered or 
+undisclosable vulnerabilities may exist due to limitations in testing tools, 
+techniques, time constraints, or emerging attack vectors unknown at the time of 
+the audit. 
+●  Operational Security Responsibility: The project team remains fully responsible for 
+secure key management, governance, access control, deployment practices, and 
+incident response mechanisms after deployment. 
+●  Regulatory Compliance: This report does not constitute legal, financial, or 
+regulatory advice. The project team is responsible for ensuring full compliance with 
+applicable legal frameworks, including but not limited to MiCA, GDPR, and other 
+relevant jurisdictions. 
+●  Reliance on Report: Third parties relying on this report should conduct their own 
+independent assessments before making any decisions. This report is not intended 
+as investment advice or an endorsement of the project. 
+●  No Liability: The auditing firm and its auditors accept no liability for any losses, 
+damages, or regulatory consequences resulting from the use or reliance on this 
+report. 
+ 

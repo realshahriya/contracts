@@ -1,0 +1,22 @@
+Here's details of what I will deliver according to your request
+1.ERC-20 Token Contract: A custom-developed, verified and tested ERC-20 token contract with
+a fixed supply of 200 million CCLX tokens.
+2. Token Configuration: The token contract will be configured with 18 decimals and transfer/burn
+functionality.
+3. Access Control: Implementation of Role-Based Access Control (RBAC) with the following
+roles:
+- ADMIN
+- TREASURER
+- BURNER
+- UPGRADER
+- PAUSER
+- ORACLE
+4. UUPS Upgradeability: The token contract will be designed with UUPS (Universal
+Upgradeable Proxy Standard) upgradeability, ensuring seamless upgrades and modifications.
+5. Pausability: The token contract will include pausability functionality, allowing authorized roles
+to pause token transfers.
+6. Custom Modules: Development of custom modules for treasury, vesting, and bridges.
+7. Testing and verify : Testing and verify of the token contract to ensure security, functionality,
+and compliance.
+8. Documentation: Detailed documentation of the token contract, custom modules, and testing
+results.
