@@ -184,7 +184,7 @@ This guide provides comprehensive instructions for testing the HYPEY ecosystem s
 
 **From HypeyVesting Contract:**
 
-1. Call `createVestingSchedule`:
+1. Call `addVestingSchedule`:
 
    ```example
    beneficiary: "0xBeneficiaryAddress"
@@ -198,24 +198,46 @@ This guide provides comprehensive instructions for testing the HYPEY ecosystem s
 
 **Verification Steps:**
 
-- Read `getVestingSchedulesCount(beneficiaryAddress)` → should return `1`
-- Read `getVestingSchedule(beneficiaryAddress, 0)` → should return schedule details
-- Read `computeReleasableAmount(beneficiaryAddress, 0)` → should return claimable amount
+- Read `vestingSchedules(beneficiaryAddress, 0)` → should return schedule details
+- Read `getVestingInfo(beneficiaryAddress)` → should return array of schedules and releasable amounts
+- Read `computeReleasableAmount(schedule)` → should return claimable amount for specific schedule
 
 #### Step 3.2: Test Batch Vesting Creation
 
 **For Multiple Beneficiaries:**
 
-1. Call `createVestingScheduleBatch`:
+1. Call `addBatchVestingSchedules` with VestingParams struct array:
 
    ```example
-   beneficiaries: ["0xAddr1", "0xAddr2", "0xAddr3"]
-   amounts: ["1000000000000000000000000", "2000000000000000000000000", "1500000000000000000000000"]
-   starts: [1704067200, 1704067200, 1704067200]
-   cliffDurations: [7776000, 15552000, 7776000]
-   durations: [31536000, 31536000, 31536000]
-   slicePeriodSeconds: [86400, 86400, 86400]
-   cliffUnlockPercents: [25, 20, 30]
+   schedules: [
+     {
+       beneficiary: "0xAddr1",
+       totalAmount: "1000000000000000000000000",
+       start: 1704067200,
+       cliffDuration: 7776000,
+       duration: 31536000,
+       slicePeriodSeconds: 86400,
+       cliffUnlockPercent: 25
+     },
+     {
+       beneficiary: "0xAddr2",
+       totalAmount: "2000000000000000000000000",
+       start: 1704067200,
+       cliffDuration: 15552000,
+       duration: 31536000,
+       slicePeriodSeconds: 86400,
+       cliffUnlockPercent: 20
+     },
+     {
+       beneficiary: "0xAddr3",
+       totalAmount: "1500000000000000000000000",
+       start: 1704067200,
+       cliffDuration: 7776000,
+       duration: 31536000,
+       slicePeriodSeconds: 86400,
+       cliffUnlockPercent: 30
+     }
+   ]
    ```
 
 ### Phase 4: Treasury Operations Testing
@@ -370,7 +392,7 @@ This guide provides comprehensive instructions for testing the HYPEY ecosystem s
 - Read `computeReleasableAmount(beneficiaryAddress, 0)` before claim
 - Execute claim
 - Read beneficiary token balance
-- Read `getVestingSchedule(beneficiaryAddress, 0)` → check released amount
+- Read `vestingSchedules(beneficiaryAddress, 0)` → check released amount
 
 #### Step 7.2: Batch Claims
 
@@ -403,8 +425,8 @@ This guide provides comprehensive instructions for testing the HYPEY ecosystem s
 
 **HypeyVesting:**
 
-- `getVestingSchedulesCount(beneficiary)` - Number of schedules
-- `getVestingSchedule(beneficiary, index)` - Schedule details
+- `getVestingInfo(beneficiary)` - Returns arrays of schedules and releasable amounts
+- `vestingSchedules(beneficiary, index)` - Individual schedule details
 - `computeReleasableAmount(beneficiary, index)` - Claimable tokens
 - `getTotalLocked(beneficiary)` - Total locked tokens
 
