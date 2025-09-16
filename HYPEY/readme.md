@@ -55,6 +55,109 @@ This guide provides comprehensive instructions for testing the HYPEY ecosystem s
 - **BURNER_ROLE**: Token burning operations
 - **UPGRADER_ROLE**: Contract upgrades
 
+## Admin Setup and Role Management
+
+### How to Set Up Administrators
+
+#### Step 1: Initial Admin Assignment
+
+During contract initialization, the deployer automatically receives the `DEFAULT_ADMIN_ROLE`. This role has the authority to grant and revoke all other roles.
+
+**For HYPEYToken:**
+
+```example
+// During initialize() call, the initialOwner receives DEFAULT_ADMIN_ROLE
+initialize(
+  _reserveBurnAddress: "0xReserveBurnAddress",
+  timelockAddress: "0xTimelockAddress", 
+  initialOwner: "0xYourAdminAddress"  // This address gets DEFAULT_ADMIN_ROLE
+)
+```
+
+**For HYPEYTreasury:**
+
+```example
+// During initialize() call, the admin receives MULTISIG_ADMIN_ROLE
+initialize(
+  admin: "0xYourAdminAddress",  // This address gets MULTISIG_ADMIN_ROLE
+  timelockAddress: "0xTimelockAddress"
+)
+```
+
+**For HypeyVesting:**
+
+```example
+// During initialize() call, the owner receives DEFAULT_ADMIN_ROLE
+initialize(
+  tokenAddress: "0xHYPEYTokenAddress",
+  owner: "0xYourAdminAddress",  // This address gets DEFAULT_ADMIN_ROLE
+  timelockAddress: "0xTimelockAddress"
+)
+```
+
+#### Step 2: Grant Additional Roles
+
+**Using Block Explorer Write Functions:**
+
+1. **Grant MULTISIG_ADMIN_ROLE** (for multi-signature operations):
+
+   ```example
+   Function: grantRole
+   role: 0x0000000000000000000000000000000000000000000000000000000000000001
+   account: "0xMultisigWalletAddress"
+   ```
+
+2. **Grant PLATFORM_MANAGER_ROLE** (for platform integrations):
+
+   ```example
+   Function: grantRole
+   role: 0x0000000000000000000000000000000000000000000000000000000000000002
+   account: "0xPlatformManagerAddress"
+   ```
+
+3. **Grant BURNER_ROLE** (for token burning operations):
+
+   ```example
+   Function: grantRole
+   role: 0x0000000000000000000000000000000000000000000000000000000000000003
+   account: "0xBurnerAddress"
+   ```
+
+#### Step 3: Verify Role Assignments
+
+**Read Functions to Verify:**
+
+```example
+// Check if address has specific role
+hasRole(roleBytes32, accountAddress)
+
+// Get role admin (who can grant/revoke this role)
+getRoleAdmin(roleBytes32)
+
+// Check role member count
+getRoleMemberCount(roleBytes32)
+
+// Get role member by index
+getRoleMember(roleBytes32, index)
+```
+
+#### Step 4: Role Management Best Practices
+
+1. **Use Multisig Wallets**: Always assign critical roles to multisig wallets
+2. **Principle of Least Privilege**: Only grant necessary roles
+3. **Regular Audits**: Periodically review role assignments
+4. **Emergency Procedures**: Maintain emergency admin access
+5. **Documentation**: Keep records of all role assignments
+
+### Role Hierarchy and Permissions
+
+| Role | Can Grant/Revoke | Permissions |
+|------|------------------|-------------|
+| DEFAULT_ADMIN_ROLE | All roles | Full contract control, upgrades via timelock |
+| MULTISIG_ADMIN_ROLE | Lower roles only | Treasury operations, vesting management |
+| PLATFORM_MANAGER_ROLE | None | Platform approvals, burn configurations |
+| BURNER_ROLE | None | Token burning operations only |
+
 ## Step-by-Step Testing Setup
 
 ### Phase 1: Contract Deployment and Initialization
@@ -474,25 +577,169 @@ This guide provides comprehensive instructions for testing the HYPEY ecosystem s
 
 ## Common Issues and Troubleshooting
 
-### Transaction Failures
+### Transaction Failures and Revert Conditions
 
-- **"UnauthorizedAccount"**: Check role assignments
-- **"ContractPaused"**: Verify emergency pause status
-- **"InsufficientBalance"**: Check token balances
-- **"ExceedsMaxWithdrawal"**: Use large withdrawal process
+#### HypeyVesting Contract Reverts
 
-### Parameter Validation
+**Access Control Errors:**
 
-- Burn rates: 0-300 basis points (0-3%)
-- Cliff percentages: 0-100%
-- Timelock delays: Minimum 1 hour
-- Vesting durations: Must exceed cliff periods
+- **`UnauthorizedInitializer()`**: Only the trusted initializer can call initialize()
+- **`UpgradeOnlyViaTimelock()`**: Upgrades must be executed through the timelock contract
+- **`UpgradeRequiresMultisigAdmin()`**: Upgrade caller must have MULTISIG_ADMIN_ROLE
 
-### Role Management
+**Parameter Validation Errors:**
 
-- Ensure proper role assignments before operations
-- Use multisig for critical administrative functions
-- Verify timelock integration for governance
+- **`InvalidAddress()`**: Address cannot be zero address
+- **`InvalidAmount()`**: Amount must be greater than zero
+- **`InvalidDuration()`**: Duration and slice period must be greater than zero
+- **`InvalidCliffPercent()`**: Cliff unlock percentage exceeds maximum allowed (100%)
+- **`StartTimeInPast()`**: Vesting start time cannot be in the past
+- **`StartTimeTooFarInFuture()`**: Start time cannot be more than 10 years in the future
+- **`CliffExceedsDuration()`**: Cliff duration cannot exceed total vesting duration
+- **`DurationTooLong()`**: Vesting duration cannot exceed 10 years
+- **`SlicePeriodTooShort()`**: Slice period must be at least 1 day
+- **`SlicePeriodExceedsDuration()`**: Slice period cannot exceed total duration
+- **`ExcessiveAmount()`**: Vesting amount exceeds maximum token supply
+- **`TimeOverflow()`**: Time calculation overflow detected
+
+**Array and Batch Operation Errors:**
+
+- **`EmptyArray()`**: Input arrays cannot be empty
+- **`BatchSizeExceeded()`**: Batch size exceeds maximum allowed (50)
+- **`ArrayLengthMismatch()`**: All input arrays must have the same length
+
+**Vesting Operation Errors:**
+
+- **`InvalidVestingIndex()`**: Vesting schedule index does not exist
+- **`VestingNotInitialized()`**: Vesting schedule has not been properly initialized
+- **`VestingAlreadyFinalized()`**: Cannot modify finalized vesting schedule
+- **`VestingNotFinalized()`**: Operation requires vesting to be finalized first
+- **`NoTokensAvailable()`**: No tokens available for release at this time
+- **`TotalAllocationExceeded()`**: Total vesting allocation exceeds available balance
+
+**Token Transfer Errors:**
+
+- **`TransferFailed()`**: Token transfer operation failed
+- **`InsufficientPoolBalance()`**: Contract has insufficient token balance
+
+**Merkle Proof Errors:**
+
+- **`MerkleRootNotSet()`**: Merkle root has not been configured
+- **`InvalidMerkleProof()`**: Provided merkle proof is invalid
+
+#### HYPEYTreasury Contract Reverts
+
+**Access Control Errors:**
+
+- **`UnauthorizedInitializer()`**: Only trusted initializer can initialize contract
+- **`UpgradeOnlyViaTimelock()`**: Upgrades must go through timelock
+- **`UpgradeRequiresMultisigAdmin()`**: Upgrade requires MULTISIG_ADMIN_ROLE
+
+**Token Management Errors:**
+
+- **`InvalidAddress()`**: Address cannot be zero
+- **`TokenAlreadySupported()`**: Token is already in supported list
+- **`TokenNotSupported()`**: Token is not in supported list
+- **`MaxTokensReached()`**: Maximum supported tokens limit reached (50)
+
+**Withdrawal Errors:**
+
+- **`InvalidAmount()`**: Amount must be greater than zero
+- **`InsufficientBalance()`**: Contract has insufficient balance
+- **`ExceedsMaxWithdrawal()`**: Amount exceeds maximum withdrawal limit
+- **`DailyLimitExceededError(token, attempted, limit, isETH)`**: Daily withdrawal limit exceeded
+- **`WithdrawalRequestNotFound()`**: Withdrawal request ID not found
+- **`WithdrawalRequestAlreadyExecuted()`**: Request has already been executed
+- **`WithdrawalRequestTooEarly()`**: Must wait for timelock delay
+- **`WithdrawalRequestExpired()`**: Request has expired (7 days after delay)
+- **`TransferFailed()`**: Token or ETH transfer failed
+
+#### HYPEYToken Contract Reverts
+
+**Access Control Errors:**
+
+- **`UnauthorizedInitializer()`**: Only trusted initializer can initialize
+- **`UnauthorizedAccount(account, role)`**: Account lacks required role
+- **`ContractPaused()`**: Contract is in emergency pause state
+
+**Parameter Validation Errors:**
+
+- **`InvalidAddress()`**: Address cannot be zero
+- **`InvalidBurnRate()`**: Burn rate parameters invalid
+- **`ExceedsMaxBurnRate()`**: Burn rate exceeds maximum allowed (3% or 300 basis points)
+- **`SelfApprovalNotAllowed()`**: Cannot approve contract's own address
+
+**Transfer and Balance Errors:**
+
+- **`InsufficientBalance()`**: Account has insufficient token balance
+- **`TransferFailed()`**: Token transfer operation failed
+
+**Governance and Proposal Errors:**
+
+- **`ProposalNotFound()`**: Proposal ID does not exist
+- **`ProposalNotReady()`**: Proposal timelock period not yet elapsed
+- **`ProposalExpired()`**: Proposal has expired (7 days after ready time)
+- **`RateChangeTooFrequent()`**: Rate changes must wait minimum interval
+- **`RateChangeExceedsLimit()`**: Rate change exceeds maximum allowed change
+
+#### MockTimelock Contract Reverts
+
+**Initialization Errors:**
+
+- **`UnauthorizedInitializer()`**: Only trusted initializer can initialize
+- **`InvalidDelay()`**: Delay must be between minimum and maximum bounds
+- **`InvalidAddress()`**: Address cannot be zero
+- **`AlreadyInitialized()`**: Contract has already been initialized
+- **`EmptyProposersArray()`**: Must provide at least one proposer
+- **`EmptyExecutorsArray()`**: Must provide at least one executor
+
+**Upgrade Errors:**
+
+- **`UnauthorizedUpgrade()`**: Only DEFAULT_ADMIN_ROLE can upgrade
+- **`InvalidAddress()`**: New implementation address cannot be zero
+
+### Troubleshooting Solutions
+
+#### For Access Control Issues
+
+1. **Check Role Assignment**: Use `hasRole(roleBytes32, account)` to verify permissions
+2. **Grant Required Role**: Use `grantRole(role, account)` with admin account
+3. **Verify Multisig**: Ensure multisig wallet has required signatures
+
+#### For Parameter Validation Issues
+
+1. **Validate Addresses**: Ensure all addresses are non-zero and valid
+2. **Check Time Parameters**: Verify timestamps are reasonable and in correct order
+3. **Validate Amounts**: Ensure amounts are within acceptable ranges
+4. **Array Consistency**: Verify all arrays have matching lengths
+
+#### For Batch Operation Issues
+
+1. **Reduce Batch Size**: Keep batches under 50 items
+2. **Check Array Lengths**: Ensure all parameter arrays have same length
+3. **Validate Each Item**: Verify each item in batch meets individual requirements
+
+#### For Token Balance Issues
+
+1. **Check Contract Balance**: Verify contract has sufficient tokens
+2. **Approve Transfers**: Ensure proper token approvals are in place
+3. **Monitor Allocations**: Track total allocations vs available balance
+
+### Quick Diagnostic Steps
+
+1. **Transaction Hash Analysis**: Check failed transaction on block explorer
+2. **Error Message Lookup**: Match error to specific revert condition above
+3. **Parameter Verification**: Validate all input parameters
+4. **Role Check**: Verify caller has required permissions
+5. **Contract State**: Check relevant contract state variables
+6. **Gas Estimation**: Ensure sufficient gas for complex operations
+
+### Emergency Procedures
+
+1. **Emergency Pause**: Use emergency pause functions if available
+2. **Admin Override**: Use admin functions to resolve critical issues
+3. **Timelock Bypass**: For urgent fixes, use emergency timelock procedures
+4. **Contact Support**: Escalate to development team for contract-level issues
 
 ## Security Considerations
 
