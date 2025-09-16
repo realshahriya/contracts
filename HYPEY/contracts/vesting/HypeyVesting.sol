@@ -144,6 +144,7 @@ contract HypeyVesting is
     error InvalidMerkleProof();
     error UpgradeOnlyViaTimelock();
     error UpgradeRequiresMultisigAdmin();
+    error InsufficientTokensForAllocation();
     
     // XSC4: Additional validation errors
     error ExcessiveAmount();
@@ -200,6 +201,8 @@ contract HypeyVesting is
         _grantRole(DEFAULT_ADMIN_ROLE, address(timelock));
         _grantRole(MULTISIG_ADMIN_ROLE, address(timelock));
         
+        ownerInitialized = true;
+        
         emit VestingInitialized(tokenAddress, _owner, timelockAddress);
     }
 
@@ -250,10 +253,17 @@ contract HypeyVesting is
         );
         
         // Check total allocation limit (CRITICAL FIX)
-        uint256 maxAllocation = token.balanceOf(address(this)) + totalAllocated;
-        if (totalAllocated + totalAmount > maxAllocation) {
-            revert TotalAllocationExceeded();
+        uint256 availableTokens = token.balanceOf(address(this));
+        if (totalAmount > availableTokens) {
+            revert InsufficientTokensForAllocation();
         }
+        
+        // CRITICAL FIX: Overflow protection for cliff calculation
+        uint256 cliffTime;
+        if (start > type(uint256).max - cliffDuration) {
+            revert("Cliff calculation overflow");
+        }
+        cliffTime = start + cliffDuration;
         
         vestingSchedules[beneficiary].push(
             VestingSchedule({
@@ -261,7 +271,7 @@ contract HypeyVesting is
                 totalAmount: totalAmount,
                 released: 0,
                 start: start,
-                cliff: start + cliffDuration,
+                cliff: cliffTime,
                 duration: duration,
                 slicePeriodSeconds: slicePeriodSeconds,
                 cliffUnlockPercent: cliffUnlockPercent
@@ -443,17 +453,26 @@ contract HypeyVesting is
                 vestedAmount = cliffAmount;
             }
 
-            // Linear vesting calculation for remainder
-            uint256 timeFromStart = block.timestamp - schedule.start;
-            uint256 remainingAmount = schedule.totalAmount - ((schedule.totalAmount * schedule.cliffUnlockPercent) / 100);
-            
-            if (timeFromStart > 0) {
-                uint256 vestedSlices = timeFromStart / schedule.slicePeriodSeconds;
-                uint256 totalSlices = schedule.duration / schedule.slicePeriodSeconds;
+            // CRITICAL FIX: Linear vesting calculation for remainder - starts from cliff time
+            if (block.timestamp > schedule.cliff) {
+                uint256 timeFromCliff = block.timestamp - schedule.cliff;
+                uint256 remainingAmount = schedule.totalAmount - ((schedule.totalAmount * schedule.cliffUnlockPercent) / 100);
                 
-                if (totalSlices > 0) {
-                    uint256 linearVested = (remainingAmount * vestedSlices) / totalSlices;
-                    vestedAmount += linearVested;
+                // Calculate linear vesting duration (total duration minus cliff duration)
+                uint256 linearVestingDuration = schedule.duration - (schedule.cliff - schedule.start);
+                
+                if (timeFromCliff > 0 && linearVestingDuration > 0) {
+                    uint256 vestedSlices = timeFromCliff / schedule.slicePeriodSeconds;
+                    uint256 totalSlices = linearVestingDuration / schedule.slicePeriodSeconds;
+                    
+                    if (totalSlices > 0) {
+                        uint256 linearVested = (remainingAmount * vestedSlices) / totalSlices;
+                        // Ensure linear vesting doesn't exceed remaining amount
+                        if (linearVested > remainingAmount) {
+                            linearVested = remainingAmount;
+                        }
+                        vestedAmount += linearVested;
+                    }
                 }
             }
 
@@ -698,10 +717,18 @@ contract HypeyVesting is
         );
         
         // Check total allocation limit and update in one step
-        if (totalAllocated + totalAmount > token.balanceOf(address(this)) + totalAllocated) {
-            revert TotalAllocationExceeded();
+        uint256 availableTokens = token.balanceOf(address(this));
+        if (totalAmount > availableTokens) {
+            revert InsufficientTokensForAllocation();
         }
         totalAllocated += totalAmount;
+        
+        // CRITICAL FIX: Overflow protection for cliff calculation
+        uint256 cliffTime;
+        if (start > type(uint256).max - cliffDuration) {
+            revert("Cliff calculation overflow");
+        }
+        cliffTime = start + cliffDuration;
         
         // Create schedule struct inline to reduce stack usage
         vestingSchedules[beneficiary].push(VestingSchedule({
@@ -709,7 +736,7 @@ contract HypeyVesting is
             totalAmount: totalAmount,
             released: 0,
             start: start,
-            cliff: start + cliffDuration,
+            cliff: cliffTime,
             duration: duration,
             slicePeriodSeconds: slicePeriodSeconds,
             cliffUnlockPercent: cliffUnlockPercent

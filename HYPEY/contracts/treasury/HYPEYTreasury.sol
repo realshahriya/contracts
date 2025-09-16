@@ -484,8 +484,9 @@ contract HYPEYTreasury is
         internal 
         override 
         view
-        onlyRole(MULTISIG_ADMIN_ROLE) 
     {
+        // CRITICAL FIX: Proper authorization logic
+        // When timelock executes upgrade, msg.sender is timelock but tx.origin is the multisig
         if (msg.sender != address(timelock)) revert UpgradeOnlyViaTimelock();
         if (!hasRole(MULTISIG_ADMIN_ROLE, tx.origin)) revert UpgradeRequiresMultisigAdmin();
         

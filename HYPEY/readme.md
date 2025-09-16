@@ -287,7 +287,7 @@ getRoleMember(roleBytes32, index)
 
 **From HypeyVesting Contract:**
 
-1. Call `addVestingSchedule`:
+1. Call `addVestingSchedule` (for single beneficiary):
 
    ```example
    beneficiary: "0xBeneficiaryAddress"
@@ -299,6 +299,8 @@ getRoleMember(roleBytes32, index)
    cliffUnlockPercent: 25 (25% unlock at cliff)
    ```
 
+   **Note**: For multiple beneficiaries, use `addBatchVestingSchedules` instead (see Step 3.2).
+
 **Verification Steps:**
 
 - Read `vestingSchedules(beneficiaryAddress, 0)` → should return schedule details
@@ -309,39 +311,51 @@ getRoleMember(roleBytes32, index)
 
 **For Multiple Beneficiaries:**
 
-1. Call `addBatchVestingSchedules` with VestingParams struct array:
+**IMPORTANT:** The `addBatchVestingSchedules` function uses a `VestingParams` struct array format. In Remix IDE, use this exact format:
+
+1. Call `addBatchVestingSchedules` with the following parameter format:
 
    ```example
    schedules: [
-     {
-       beneficiary: "0xAddr1",
-       totalAmount: "1000000000000000000000000",
-       start: 1704067200,
-       cliffDuration: 7776000,
-       duration: 31536000,
-       slicePeriodSeconds: 86400,
-       cliffUnlockPercent: 25
-     },
-     {
-       beneficiary: "0xAddr2",
-       totalAmount: "2000000000000000000000000",
-       start: 1704067200,
-       cliffDuration: 15552000,
-       duration: 31536000,
-       slicePeriodSeconds: 86400,
-       cliffUnlockPercent: 20
-     },
-     {
-       beneficiary: "0xAddr3",
-       totalAmount: "1500000000000000000000000",
-       start: 1704067200,
-       cliffDuration: 7776000,
-       duration: 31536000,
-       slicePeriodSeconds: 86400,
-       cliffUnlockPercent: 30
-     }
+     [
+       "0xAddr1",
+       "1000000000000000000000000",
+       "1704067200",
+       "7776000",
+       "31536000",
+       "86400",
+       "25"
+     ],
+     [
+       "0xAddr2",
+       "2000000000000000000000000",
+       "1704067200",
+       "15552000",
+       "31536000",
+       "86400",
+       "20"
+     ],
+     [
+       "0xAddr3",
+       "1500000000000000000000000",
+       "1704067200",
+       "7776000",
+       "31536000",
+       "86400",
+       "30"
+     ]
    ]
    ```
+
+**Parameter Order for Each Array Element:**
+
+1. `beneficiary` (address)
+2. `totalAmount` (uint256)
+3. `start` (uint256)
+4. `cliffDuration` (uint256)
+5. `duration` (uint256)
+6. `slicePeriodSeconds` (uint256)
+7. `cliffUnlockPercent` (uint256)
 
 ### Phase 4: Treasury Operations Testing
 
@@ -721,9 +735,43 @@ getRoleMember(roleBytes32, index)
 
 #### For Token Balance Issues
 
-1. **Check Contract Balance**: Verify contract has sufficient tokens
+1. **Check Contract Balance**: Verify contract has sufficient token balance
 2. **Approve Transfers**: Ensure proper token approvals are in place
 3. **Monitor Allocations**: Track total allocations vs available balance
+
+#### For Vesting Function Call Errors
+
+**Common `addBatchVestingSchedules` Issues:**
+
+1. **Wrong Function Called**:
+   - **Error**: `TypeError: invalid address (argument="address", value=[...], code=INVALID_ARGUMENT)`
+   - **Cause**: Called `addVestingSchedule` (singular) instead of `addBatchVestingSchedules` (plural)
+   - **Solution**: Use `addBatchVestingSchedules` function with struct array format
+
+2. **Incorrect Parameter Format**:
+   - **Error**: Parameter encoding errors in Remix IDE
+   - **Cause**: Using object notation instead of array format
+   - **Solution**: Use nested array format: `[["address","amount","start",...], [...]]`
+
+3. **Parameter Validation Failures**:
+   - **`StartTimeInPast()`**: Use future timestamps (e.g., `1767225600`)
+   - **`SlicePeriodTooShort()`**: Use minimum 86400 seconds (1 day)
+   - **`InsufficientTokensForAllocation()`**: Ensure contract has enough token balance
+   - **`ExceedsMaxBurnRate()`**: Keep cliff unlock percentages ≤ 100%
+
+4. **Array Length Issues**:
+   - **`ArrayLengthMismatch()`**: All parameter arrays must have same length
+   - **`BatchSizeExceeded()`**: Maximum 100 schedules per batch
+   - **`EmptyArray()`**: Provide at least one vesting schedule
+
+**Correct Parameter Format Example:**
+
+```json
+[
+  ["0xBeneficiary1", "1000000000000000000000000", "1767225600", "7776000", "31536000", "86400", "25"],
+  ["0xBeneficiary2", "2000000000000000000000000", "1767225600", "7776000", "31536000", "86400", "20"]
+]
+```
 
 ### Quick Diagnostic Steps
 

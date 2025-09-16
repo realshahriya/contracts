@@ -341,15 +341,21 @@ contract HYPEYToken is
         uint256 amount, 
         uint256 taxBps
     ) internal {
-        // CRITICAL FIX: Integer overflow protection
+        // CRITICAL FIX: Complete integer overflow protection
         uint256 burnAmount;
-        unchecked {
-            // Safe multiplication check
-            if (amount > type(uint256).max / taxBps) {
-                revert("Burn calculation overflow");
-            }
-            burnAmount = (amount * taxBps) / BASIS_POINTS_DENOMINATOR;
+        
+        // Check for multiplication overflow
+        if (taxBps > 0 && amount > type(uint256).max / taxBps) {
+            revert("Burn calculation overflow");
         }
+        
+        // Safe calculation with overflow protection
+        uint256 product = amount * taxBps;
+        if (product < amount || product < taxBps) {
+            revert("Burn calculation overflow");
+        }
+        
+        burnAmount = product / BASIS_POINTS_DENOMINATOR;
         uint256 burnNow = burnAmount / 2;
         uint256 toReserve = burnAmount - burnNow;
         uint256 sendAmount = amount - burnAmount;
