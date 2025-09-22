@@ -809,6 +809,225 @@ getRoleMember(roleBytes32, index)
 - [ ] Emergency functions operational
 - [ ] Upgrade mechanisms secure
 
+## Client Operation Guide
+
+### Common Issues & Solutions
+
+This section addresses frequently reported issues and provides step-by-step solutions for contract operations.
+
+#### 1. Vesting Schedule Issues
+
+**Problem**: `addVestingSchedule` doesn't work for small slices
+
+**Solution Steps**:
+
+1. **Verify Role**: Ensure caller has `MULTISIG_ADMIN_ROLE`
+
+   ```json
+   hasRole(MULTISIG_ADMIN_ROLE, yourAddress) → should return true
+   ```
+
+2. **Check Parameters**:
+   - `totalAmount` > 0
+   - `start` < `cliff` < `duration`
+   - `slicePeriodSeconds` > 0
+   - `cliffUnlockPercentage` ≤ 100
+
+3. **Verify Contract Balance**:
+
+   ```json
+   balanceOf(vestingContractAddress) ≥ totalAmount
+   ```
+
+4. **Example Call**:
+
+   ```json
+   {
+     "beneficiary": "0xRecipientAddress",
+     "totalAmount": "1000000000000000000000",
+     "start": "1767225600",
+     "cliff": "1774915200",
+     "duration": "1798761600",
+     "slicePeriodSeconds": "86400",
+     "cliffUnlockPercentage": "25"
+   }
+   ```
+
+#### 2. Large Withdrawal Operations
+
+**Problem**: Don't know how to get `requestId` for execution
+
+**Solution Steps**:
+
+1. **Request Withdrawal**:
+
+   ```json
+   requestLargeWithdrawal(tokenAddress, recipientAddress, amount, isETH)
+   ```
+
+2. **Get Request ID from Transaction**:
+   - Check transaction logs for `LargeWithdrawalRequested` event
+   - The event contains the `requestId` parameter
+   - Or use block explorer to view transaction details
+
+3. **Verify Request**:
+
+   ```json
+   getPendingWithdrawal(requestId) → returns request details
+   ```
+
+4. **Execute After Timelock**:
+
+   ```json
+   executeLargeWithdrawal(requestId)
+   ```
+
+#### 3. Checking Contract State
+
+**Pending Withdrawals**:
+
+```json
+getPendingWithdrawal(requestId) → returns:
+{
+  token: "0xTokenAddress",
+  to: "0xRecipientAddress", 
+  amount: "1000000000000000000000",
+  requestTime: 1767225600,
+  isETH: false
+}
+```
+
+**Supported Tokens**:
+
+```json
+supportedTokens[tokenAddress] → returns true/false
+```
+
+**Current Burn Rate**:
+
+```json
+burnRateBasisPoints() → returns current rate (e.g., 100 = 1%)
+```
+
+#### 4. Burn Rate Management
+
+**Problem**: `proposeBurnRateChange` function missing
+
+**Correct Process**:
+
+1. **Propose New Rate**:
+
+   ```json
+   setBurnRate(newRateBasisPoints) // e.g., 200 for 2%
+   ```
+
+2. **Wait for Timelock Period** (typically 24-48 hours)
+
+3. **Execute Change**:
+
+   ```json
+   executeBurnRateChange()
+   ```
+
+4. **Verify Change**:
+
+   ```json
+   burnRateBasisPoints() → should show new rate
+   ```
+
+#### 5. Emergency Pause Behavior
+
+**Understanding Emergency Pause**:
+
+- `setEmergencyPause(true)` affects functions with `whenNotEmergencyPaused` modifier
+- Owner functions like `distributeInitialSupply` remain accessible
+- This is intentional for emergency management
+
+**Functions Affected by Emergency Pause**:
+
+- `transfer()` and `transferFrom()`
+- `setNightMode()`
+- Most user-facing functions
+
+**Functions NOT Affected**:
+
+- Owner administrative functions
+- Emergency management functions
+- View functions
+
+#### 6. Burn Functions Explained
+
+**burnKPIEvent**:
+
+- Burns tokens from caller's balance (owner)
+- Requires `onlyOwner` role
+- Used for milestone achievements
+
+```json
+burnKPIEvent(amountToBurn)
+```
+
+**burnPlatformFee**:
+
+- `amount`: Total transaction amount
+- `basisPoints`: Burn rate (max 500 = 5%)
+- Calculation: `burnAmount = (amount * basisPoints) / 10000`
+- Half burned immediately, half to reserve
+
+```json
+burnPlatformFee(1000000000000000000000, 250) // Burns 2.5% of 1000 tokens
+```
+
+#### 7. Small Transfer Exemptions
+
+**Current Implementation**:
+
+- Per-address exemption system
+- `setSmallTransferExempt(address, bool)` exempts specific addresses
+- Small transfers (< 0.1% of balance) apply burn tax unless sender exempted
+
+**Usage**:
+
+```json
+setSmallTransferExempt("0xExchangeAddress", true) // Exempt exchange
+setSmallTransferExempt("0xUserAddress", false)   // Remove exemption
+```
+
+### Operation Checklist
+
+**Before Any Operation**:
+
+- [ ] Verify you have required role
+- [ ] Check contract is not paused (if applicable)
+- [ ] Validate all parameters
+- [ ] Ensure sufficient gas
+
+**For Vesting Operations**:
+
+- [ ] Contract has sufficient token balance
+- [ ] Time parameters are logical
+- [ ] Beneficiary address is valid
+
+**For Treasury Operations**:
+
+- [ ] Token is in supported list
+- [ ] Amount within daily limits
+- [ ] Proper timelock for large withdrawals
+
+**For Burn Operations**:
+
+- [ ] Caller has sufficient balance
+- [ ] Burn rate within limits
+- [ ] Proper role permissions
+
+### Emergency Contacts
+
+If you encounter issues not covered in this guide:
+
+1. Check transaction on block explorer for specific error messages
+2. Verify contract state using view functions
+3. Contact development team with transaction hash and error details
+
 ## Conclusion
 
 This guide provides a comprehensive framework for testing the HYPEY smart contract ecosystem. Follow the sequential steps for proper setup and use the block explorer functions to verify each operation. Always test thoroughly on testnets before mainnet deployment.
@@ -818,5 +1037,5 @@ For additional support or questions, refer to the contract documentation or cont
 ---
 
 **Built by:** TOPAY DEV TEAM  
-**Version:** 1.0  
+**Version:** 1.1  
 **Last Updated:** January 2024
