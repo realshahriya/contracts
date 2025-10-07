@@ -295,7 +295,7 @@ getRoleMember(roleBytes32, index)
    start: 1704067200 (Unix timestamp - Jan 1, 2024)
    cliffDuration: 7776000 (90 days in seconds)
    duration: 31536000 (365 days in seconds)
-   slicePeriodSeconds: 86400 (1 day)
+   slicePeriodSeconds: 60 (60 seconds)
    cliffUnlockPercent: 25 (25% unlock at cliff)
    ```
 
@@ -323,7 +323,7 @@ getRoleMember(roleBytes32, index)
        "1704067200",
        "7776000",
        "31536000",
-       "86400",
+       "60",
        "25"
      ],
      [
@@ -332,7 +332,7 @@ getRoleMember(roleBytes32, index)
        "1704067200",
        "15552000",
        "31536000",
-       "86400",
+       "60",
        "20"
      ],
      [
@@ -341,7 +341,7 @@ getRoleMember(roleBytes32, index)
        "1704067200",
        "7776000",
        "31536000",
-       "86400",
+       "60",
        "30"
      ]
    ]
@@ -611,7 +611,7 @@ getRoleMember(roleBytes32, index)
 - **`StartTimeTooFarInFuture()`**: Start time cannot be more than 10 years in the future
 - **`CliffExceedsDuration()`**: Cliff duration cannot exceed total vesting duration
 - **`DurationTooLong()`**: Vesting duration cannot exceed 10 years
-- **`SlicePeriodTooShort()`**: Slice period must be at least 1 day
+- **`SlicePeriodTooShort()`**: Slice period must be at least 60 seconds
 - **`SlicePeriodExceedsDuration()`**: Slice period cannot exceed total duration
 - **`ExcessiveAmount()`**: Vesting amount exceeds maximum token supply
 - **`TimeOverflow()`**: Time calculation overflow detected
@@ -755,7 +755,7 @@ getRoleMember(roleBytes32, index)
 
 3. **Parameter Validation Failures**:
    - **`StartTimeInPast()`**: Use future timestamps (e.g., `1767225600`)
-   - **`SlicePeriodTooShort()`**: Use minimum 86400 seconds (1 day)
+   - **`SlicePeriodTooShort()`**: Use minimum 60 seconds
    - **`InsufficientTokensForAllocation()`**: Ensure contract has enough token balance
    - **`ExceedsMaxBurnRate()`**: Keep cliff unlock percentages ≤ 100%
 
@@ -768,8 +768,8 @@ getRoleMember(roleBytes32, index)
 
 ```json
 [
-  ["0xBeneficiary1", "1000000000000000000000000", "1767225600", "7776000", "31536000", "86400", "25"],
-  ["0xBeneficiary2", "2000000000000000000000000", "1767225600", "7776000", "31536000", "86400", "20"]
+  ["0xBeneficiary1", "1000000000000000000000000", "1767225600", "7776000", "31536000", "60", "25"],
+  ["0xBeneficiary2", "2000000000000000000000000", "1767225600", "7776000", "31536000", "60", "20"]
 ]
 ```
 
@@ -848,7 +848,7 @@ This section addresses frequently reported issues and provides step-by-step solu
      "start": "1767225600",
      "cliff": "1774915200",
      "duration": "1798761600",
-     "slicePeriodSeconds": "86400",
+     "slicePeriodSeconds": "60",
      "cliffUnlockPercentage": "25"
    }
    ```

@@ -616,7 +616,7 @@ contract HypeyVesting is
         
         // XSC4: Duration sanity checks
         if (duration > 10 * 365 days) revert DurationTooLong(); // Max 10 years
-        if (slicePeriodSeconds < 1 days) revert SlicePeriodTooShort(); // Min 1 day slice
+        if (slicePeriodSeconds < 60) revert SlicePeriodTooShort(); // Min 60 seconds slice
         if (slicePeriodSeconds > duration) revert SlicePeriodExceedsDuration(); // Slice can't exceed duration
         
         if (cliffUnlockPercent > MAX_CLIFF_PERCENT) revert InvalidCliffPercent();
